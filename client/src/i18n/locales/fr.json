@@ -1,0 +1,51 @@
+{
+  "register": {
+    "title": "Créer un Compte",
+    "description": "Entrez vos informations pour commencer",
+    "email": "Email",
+    "emailPlaceholder": "Entrez votre email",
+    "password": "Mot de passe",
+    "passwordPlaceholder": "Entrez votre mot de passe",
+    "confirmPassword": "Confirmer le mot de passe",
+    "confirmPasswordPlaceholder": "Ré-entrez votre mot de passe",
+    "submit": "S'inscrire",
+    "loading": "Création du compte...",
+    "success": "Compte créé avec succès !",
+    "error": "Échec de la création du compte. Veuillez réessayer.",
+    "loginLink": "Vous avez déjà un compte ? Connectez-vous"
+  },
+  "dashboard": {
+    "welcome": "Bienvenue",
+    "subtitle": "Voici ce qui se passe avec votre compte aujourd'hui",
+    "sendMoney": "Envoyer de l'argent",
+    "requestMoney": "Demander de l'argent",
+    "payBills": "Payer les factures",
+    "topUp": "Recharger",
+    "send": "Envoyer",
+    "request": "Demander",
+    "pay": "Payer",
+    "addMoney": "Ajouter de l'argent",
+    "overview": "Aperçu",
+    "transactions": "Transactions",
+    "analytics": "Analytique",
+    "balance": "Solde disponible",
+    "recentTransactions": "Transactions récentes",
+    "allTransactions": "Toutes les transactions"
+  },
+  "navigation": {
+    "home": "Accueil",
+    "send": "Envoyer",
+    "qr": "Code QR",
+    "daret": "Daret",
+    "agents": "Agents",
+    "finance": "Finance"
+  },
+  "language": {
+    "title": "Sélectionnez Votre Langue",
+    "description": "Choisissez votre langue préférée pour continuer",
+    "en": "Anglais",
+    "fr": "Français",
+    "ar": "Arabe",
+    "ber": "Berbère"
+  }
+} 

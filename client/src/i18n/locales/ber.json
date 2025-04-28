@@ -1,0 +1,75 @@
+{
+  "common": {
+    "loading": "ⴰⵔ ⵉⵙⵙⵏⴰⵏ",
+    "error": "ⵜⵓⵙⵙⵏⴰ ⵜⵓⵔⵔⵉⵜ",
+    "success": "ⵉⵎⵎⵉ ⴰⵎⵣⵡⵉ",
+    "save": "ⵙⵙⵏⴳⵍ",
+    "cancel": "ⵙⴳⵍ",
+    "delete": "ⴽⵙ",
+    "edit": "ⴱⴷⵍ",
+    "search": "ⵔⵔⵣⵣⵎ",
+    "back": "ⵔⵖⵔⵖ",
+    "next": "ⴷⴼⴼⵉⵔ",
+    "submit": "ⴰⵣⵏ",
+    "confirm": "ⵙⵙⵏⴳⵍ",
+    "close": "ⵎⴳⵍ"
+  },
+  "auth": {
+    "login": "ⴽⵛⵎ",
+    "register": "ⴰⵔⵎⴰⵙ",
+    "logout": "ⴼⴼⵖ",
+    "email": "ⵉⵎⵢⵍ",
+    "password": "ⴰⵣⵔⴰⵔ",
+    "forgotPassword": "ⵜⵙⵎⵎⵔⵜ ⴰⵣⵔⴰⵔ?",
+    "resetPassword": "ⴰⵙⵏⵓⵙⵙⵉ ⴰⵣⵔⴰⵔ"
+  },
+  "dashboard": {
+    "welcome": "ⵎⵔⵀⴱⴰ ⵙ ⵍⵎⴰⵏⵙ",
+    "subtitle": "ⴰⵜⴰ ⵉⵍⵍⴰ ⵉⵙⵙⵏⴰⵏ ⵙ ⵓⵎⴰⵏⵙ ⵏⵏⵓⵏ",
+    "sendMoney": "ⴰⵣⵏ ⵉⴷⵔⴰⵔⵏ",
+    "requestMoney": "ⵙⵙⵓⵜ ⵉⴷⵔⴰⵔⵏ",
+    "payBills": "ⵙⵙⵏⴳⵍ ⵜⵉⵙⵔⴰⴷⵉⵏ",
+    "topUp": "ⵔⵎⵎⵍ",
+    "send": "ⴰⵣⵏ",
+    "request": "ⵙⵙⵓⵜ",
+    "pay": "ⵙⵙⵏⴳⵍ",
+    "addMoney": "ⵔⵏⵏⴰ ⵉⴷⵔⴰⵔⵏ",
+    "overview": "ⵜⵉⵙⵙⵏⴰⵏⵜ",
+    "transactions": "ⵜⵉⵙⵔⴰⴷⵉⵏ",
+    "analytics": "ⵜⵉⵙⵙⵏⴰⵏⵜ",
+    "balance": "ⵉⵎⵍⴰⵍ",
+    "recentTransactions": "ⵜⵉⵙⵔⴰⴷⵉⵏ ⵜⵉⵎⵣⵉⵔⵉⵏ",
+    "allTransactions": "ⴰⴽⴽ ⵜⵉⵙⵔⴰⴷⵉⵏ"
+  },
+  "navigation": {
+    "home": "ⵜⴰⵎⴰⵣⵉⵔⵜ",
+    "send": "ⴰⵣⵏ",
+    "qr": "ⵕⵕ ⴽⵓⴷ",
+    "daret": "ⴷⴰⵔⴰ",
+    "agents": "ⵉⵎⵙⴰⵔⵏ",
+    "finance": "ⵜⵉⵎⵍⴰⵍⵜ"
+  },
+  "register": {
+    "title": "ⴰⵔⵎⴰⵙ ⵓⵎⴰⵏⵙ",
+    "description": "ⴽⵛⵎ ⵜⵉⵙⵏⴰⵏⵜ ⵏⵏⵓⵏ ⴰⴷ ⵜⴱⴷⴰ",
+    "email": "ⵉⵎⵢⵍ",
+    "emailPlaceholder": "ⴽⵛⵎ ⵉⵎⵢⵍ ⵏⵏⵓⵏ",
+    "password": "ⴰⵣⵔⴰⵔ",
+    "passwordPlaceholder": "ⴽⵛⵎ ⴰⵣⵔⴰⵔ ⵏⵏⵓⵏ",
+    "confirmPassword": "ⵙⵙⵏⴳⵍ ⴰⵣⵔⴰⵔ",
+    "confirmPasswordPlaceholder": "ⵙⵙⵏⴳⵍ ⴰⵣⵔⴰⵔ ⵏⵏⵓⵏ",
+    "submit": "ⴰⵔⵎⴰⵙ",
+    "loading": "ⴰⵔ ⵉⵙⵙⵏⴰⵏ...",
+    "success": "ⵜⵓⵎⴰⵙⵜ ⵜⵎⵣⵉⵔⵜ!",
+    "error": "ⵜⵓⵎⴰⵙⵜ ⵜⵓⵔⵔⵉⵜ. ⴰⵔⵎ ⴰⵣⵏ ⵜⵉⵔⵉⵜ.",
+    "loginLink": "ⵉⵙ ⵜⵙⴰⵏⵉⴷ ⵓⵎⴰⵏⵙ? ⴽⵛⵎ"
+  },
+  "language": {
+    "title": "ⴼⵔⵎ ⵜⵎⵙⵍⴰⵢⵜ ⵏⵏⵓⵏ",
+    "description": "ⴼⵔⵎ ⵜⵎⵙⵍⴰⵢⵜ ⵏⵏⵓⵏ ⴰⴷ ⵜⴽⵎⵍ",
+    "en": "ⵜⴰⵏⴳⵍⵉⵣⵜ",
+    "fr": "ⵜⴰⴼⵔⴰⵏⵙⵉⵙⵜ",
+    "ar": "ⵜⴰⵄⵔⴰⴱⵉⵜ",
+    "ber": "ⵜⴰⵎⴰⵣⵉⵖⵜ"
+  }
+} 

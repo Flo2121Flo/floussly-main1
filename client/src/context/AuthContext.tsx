@@ -1,4 +1,4 @@
-import { createContext, useContext, ReactNode } from 'react';
+import { createContext, useContext, ReactNode, useState, useEffect } from 'react';
 import { User } from '@shared/schema';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { getQueryFn, apiRequest, queryClient } from '@/lib/queryClient';
@@ -9,7 +9,10 @@ interface AuthContextType {
   user: User | null;
   isLoading: boolean;
   error: Error | null;
-  logout: () => void;
+  isAuthenticated: boolean;
+  login: (email: string, password: string) => Promise<void>;
+  logout: () => Promise<void>;
+  refreshToken: () => Promise<void>;
 }
 
 export const AuthContext = createContext<AuthContextType | null>(null);
@@ -17,14 +20,50 @@ export const AuthContext = createContext<AuthContextType | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [_, navigate] = useLocation();
   const { toast } = useToast();
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   
   const {
     data: user,
     error,
     isLoading,
+    refetch: refetchUser,
   } = useQuery<User | null>({
     queryKey: ['/api/user'],
     queryFn: getQueryFn({ on401: 'returnNull' }),
+    retry: false,
+  });
+
+  useEffect(() => {
+    setIsAuthenticated(!!user);
+  }, [user]);
+
+  const loginMutation = useMutation({
+    mutationFn: async ({ email, password }: { email: string; password: string }) => {
+      const response = await apiRequest('POST', '/api/login', { email, password });
+      return response.data;
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(['/api/user'], data.user);
+      setIsAuthenticated(true);
+      
+      // Get the redirect path from localStorage
+      const redirectPath = localStorage.getItem('redirectAfterLogin') || '/';
+      localStorage.removeItem('redirectAfterLogin');
+      
+      toast({
+        title: "Login successful",
+        description: "Welcome back!",
+      });
+      
+      navigate(redirectPath);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Login failed",
+        description: error.message || "Invalid email or password",
+        variant: "destructive"
+      });
+    }
   });
 
   const logoutMutation = useMutation({
@@ -40,14 +79,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     onSuccess: () => {
       // Clear user data from cache
       queryClient.setQueryData(['/api/user'], null);
+      setIsAuthenticated(false);
       
-      // Show success toast
+      // Clear any stored tokens
+      localStorage.removeItem('token');
+      localStorage.removeItem('refreshToken');
+      
       toast({
         title: "Logged out successfully",
         description: "You have been logged out of your account",
       });
       
-      // Navigate to login page
       navigate('/login');
     },
     onError: () => {
@@ -58,9 +100,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
     }
   });
-  
-  const logout = () => {
-    logoutMutation.mutate();
+
+  const refreshTokenMutation = useMutation({
+    mutationFn: async () => {
+      const refreshToken = localStorage.getItem('refreshToken');
+      if (!refreshToken) throw new Error('No refresh token available');
+      
+      const response = await apiRequest('POST', '/api/refresh-token', { refreshToken });
+      return response.data;
+    },
+    onSuccess: (data) => {
+      localStorage.setItem('token', data.token);
+      if (data.refreshToken) {
+        localStorage.setItem('refreshToken', data.refreshToken);
+      }
+      refetchUser();
+    },
+    onError: () => {
+      setIsAuthenticated(false);
+      navigate('/login');
+    }
+  });
+
+  const login = async (email: string, password: string) => {
+    await loginMutation.mutateAsync({ email, password });
+  };
+
+  const logout = async () => {
+    await logoutMutation.mutateAsync();
+  };
+
+  const refreshToken = async () => {
+    await refreshTokenMutation.mutateAsync();
   };
 
   return (
@@ -69,7 +140,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user: user || null,
         isLoading,
         error: error as Error | null,
-        logout
+        isAuthenticated,
+        login,
+        logout,
+        refreshToken
       }}
     >
       {children}

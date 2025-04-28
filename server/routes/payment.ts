@@ -1,7 +1,9 @@
 import express, { Request, Response } from 'express';
 import { z } from 'zod';
 import { fromZodError } from 'zod-validation-error';
+import { v4 as uuidv4 } from 'uuid';
 import { paymentService } from '../services/payment';
+import { Payment } from '../types/payment';
 
 const router = express.Router();
 
@@ -134,13 +136,11 @@ export function setupPaymentRoutes(app: express.Express) {
         metadata: z.record(z.any()).optional()
       }).parse(req.body);
 
-      // Generate a unique reference for this payment
       const reference = uuidv4();
-      
-      // Get callback URL from request or use a default
       const callbackUrl = `${req.protocol}://${req.get('host')}/api/payments/callback/${provider}`;
       
-      const paymentResponse = await paymentService.createPayment(provider, {
+      const paymentResponse = await paymentService.createPayment({
+        provider,
         amount,
         currency,
         description,
@@ -151,11 +151,11 @@ export function setupPaymentRoutes(app: express.Express) {
       });
 
       res.status(200).json({
-        success: paymentResponse.success,
+        success: true,
         reference: paymentResponse.reference,
         paymentUrl: paymentResponse.paymentUrl,
         status: paymentResponse.status,
-        message: paymentResponse.message
+        message: "Payment created successfully"
       });
     } catch (error) {
       console.error('Payment creation error:', error);

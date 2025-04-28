@@ -1,0 +1,51 @@
+{
+  "register": {
+    "title": "إنشاء حساب",
+    "description": "أدخل بياناتك للبدء",
+    "email": "البريد الإلكتروني",
+    "emailPlaceholder": "أدخل بريدك الإلكتروني",
+    "password": "كلمة المرور",
+    "passwordPlaceholder": "أدخل كلمة المرور",
+    "confirmPassword": "تأكيد كلمة المرور",
+    "confirmPasswordPlaceholder": "أعد إدخال كلمة المرور",
+    "submit": "تسجيل",
+    "loading": "جاري إنشاء الحساب...",
+    "success": "تم إنشاء الحساب بنجاح!",
+    "error": "فشل إنشاء الحساب. يرجى المحاولة مرة أخرى.",
+    "loginLink": "هل لديك حساب بالفعل؟ سجل دخولك"
+  },
+  "dashboard": {
+    "welcome": "مرحباً بعودتك",
+    "subtitle": "هذا ما يحدث في حسابك اليوم",
+    "sendMoney": "إرسال الأموال",
+    "requestMoney": "طلب الأموال",
+    "payBills": "دفع الفواتير",
+    "topUp": "إعادة الشحن",
+    "send": "إرسال",
+    "request": "طلب",
+    "pay": "دفع",
+    "addMoney": "إضافة أموال",
+    "overview": "نظرة عامة",
+    "transactions": "المعاملات",
+    "analytics": "التحليلات",
+    "balance": "الرصيد المتاح",
+    "recentTransactions": "المعاملات الأخيرة",
+    "allTransactions": "جميع المعاملات"
+  },
+  "navigation": {
+    "home": "الرئيسية",
+    "send": "إرسال",
+    "qr": "رمز QR",
+    "daret": "دارة",
+    "agents": "الوكلاء",
+    "finance": "المالية"
+  },
+  "language": {
+    "title": "اختر لغتك",
+    "description": "اختر اللغة المفضلة لديك للمتابعة",
+    "en": "الإنجليزية",
+    "fr": "الفرنسية",
+    "ar": "العربية",
+    "ber": "الأمازيغية"
+  }
+} 

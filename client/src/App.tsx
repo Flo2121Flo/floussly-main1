@@ -1,11 +1,16 @@
-import { Switch, Route, useLocation } from "wouter";
+import { Switch, Route, useLocation, Redirect } from "wouter";
+import { useEffect } from "react";
+import { useAuth } from "@/hooks/use-auth";
+import Layout from "./components/Layout";
 import NotFound from "@/pages/not-found";
 import Splash from "@/pages/Splash";
 import LanguageSelection from "@/pages/LanguageSelection";
 import Login from "@/pages/Login";
+import Register from "@/pages/Register";
 import OtpVerification from "@/pages/OtpVerification";
 import Kyc from "@/pages/Kyc";
 import Home from "@/pages/Home";
+import Dashboard from "@/pages/Dashboard";
 import SendMoney from "@/pages/SendMoney";
 import QrCode from "@/pages/QrCode";
 import Daret from "@/pages/Daret";
@@ -21,72 +26,95 @@ import Transactions from "@/pages/Transactions";
 import TransactionDetail from "@/pages/TransactionDetail";
 import BankAccounts from "@/pages/BankAccounts";
 import TestFeeCalculator from "@/pages/TestFeeCalculator";
-import { useEffect } from "react";
-import Layout from "./components/Layout";
+
+interface ProtectedRouteProps {
+  component: React.ComponentType<any>;
+  path: string;
+  [key: string]: any;
+}
 
 // Main App component
 function App() {
   const [location] = useLocation();
+  const { isAuthenticated, isLoading } = useAuth();
   
   useEffect(() => {
     // Scroll to top on route change
     window.scrollTo(0, 0);
   }, [location]);
 
-  // Check if user is authenticated (for demo purposes we're skipping actual authentication)
-  const isAuthenticated = true; // This would normally come from an auth service
-  const isDemoMode = true; // Setting to true allows access to all pages without auth
-  
   // Function to create protected routes that redirect to login if not authenticated
-  const ProtectedRoute = ({ component: Component, ...rest }: any) => {
-    if (isDemoMode || isAuthenticated) {
-      return <Component {...rest} />;
-    } else {
-      // Redirect to login and remember where they were trying to go
-      window.localStorage.setItem('redirectAfterLogin', rest.path);
-      window.location.href = '/login';
-      return null;
+  const ProtectedRoute = ({ component: Component, path, ...rest }: ProtectedRouteProps) => {
+    if (isLoading) {
+      return <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
+      </div>;
     }
+
+    if (!isAuthenticated) {
+      // Store the intended destination
+      localStorage.setItem('redirectAfterLogin', path);
+      return <Redirect to="/login" />;
+    }
+
+    return <Component {...rest} />;
   };
+
+  // Public routes that don't require authentication
+  const publicRoutes = [
+    { path: "/splash", component: Splash },
+    { path: "/language", component: LanguageSelection },
+    { path: "/login", component: Login },
+    { path: "/register", component: Register },
+    { path: "/otp-verification", component: OtpVerification },
+  ];
+
+  // Protected routes that require authentication
+  const protectedRoutes = [
+    { path: "/", component: Dashboard },
+    { path: "/home", component: Home },
+    { path: "/dashboard", component: Dashboard },
+    { path: "/send-money", component: SendMoney },
+    { path: "/qr-code", component: QrCode },
+    { path: "/tontine", component: Daret },
+    { path: "/daret", component: Daret },
+    { path: "/agent-map", component: AgentMap },
+    { path: "/finance-overview", component: FinanceOverview },
+    { path: "/finance", component: FinanceOverview },
+    { path: "/financial-health", component: FinancialHealth },
+    { path: "/transactions", component: Transactions },
+    { path: "/transaction/:id", component: TransactionDetail },
+    { path: "/notifications", component: Notifications },
+    { path: "/settings", component: ProfileSettings },
+    { path: "/camera-scan", component: CameraScan },
+    { path: "/profile", component: Profile },
+    { path: "/payment-page", component: PaymentPage },
+    { path: "/payment", component: PaymentPage },
+    { path: "/withdraw", component: PaymentPage },
+    { path: "/special-offers", component: PaymentPage },
+    { path: "/bank-accounts", component: BankAccounts },
+    { path: "/kyc", component: Kyc },
+    { path: "/test-fee-calculator", component: TestFeeCalculator },
+  ];
   
   return (
     <Layout>
       <Switch>
-        {/* Public onboarding routes */}
-        <Route path="/splash" component={Splash} />
-        <Route path="/language" component={LanguageSelection} />
-        <Route path="/login" component={Login} />
-        <Route path="/otp-verification" component={OtpVerification} />
+        {/* Public routes */}
+        {publicRoutes.map(({ path, component: Component }) => (
+          <Route key={path} path={path} component={Component} />
+        ))}
         
-        {/* Protected main routes */}
-        <Route path="/" component={(props: any) => <ProtectedRoute component={Home} path="/" {...props} />} />
-        <Route path="/send-money" component={(props: any) => <ProtectedRoute component={SendMoney} path="/send-money" {...props} />} />
-        <Route path="/qr-code" component={(props: any) => <ProtectedRoute component={QrCode} path="/qr-code" {...props} />} />
-        <Route path="/tontine" component={(props: any) => <ProtectedRoute component={Daret} path="/tontine" {...props} />} />
-        <Route path="/daret" component={(props: any) => <ProtectedRoute component={Daret} path="/daret" {...props} />} />
-        <Route path="/agent-map" component={(props: any) => <ProtectedRoute component={AgentMap} path="/agent-map" {...props} />} />
-        <Route path="/finance-overview" component={(props: any) => <ProtectedRoute component={FinanceOverview} path="/finance-overview" {...props} />} />
-        <Route path="/finance" component={(props: any) => <ProtectedRoute component={FinanceOverview} path="/finance" {...props} />} />
-        <Route path="/financial-health" component={(props: any) => <ProtectedRoute component={FinancialHealth} path="/financial-health" {...props} />} />
-        <Route path="/transactions" component={(props: any) => <ProtectedRoute component={Transactions} path="/transactions" {...props} />} />
-        <Route path="/transaction/:id" component={(props: any) => <ProtectedRoute component={TransactionDetail} path="/transaction/:id" {...props} />} />
-        <Route path="/notifications" component={(props: any) => <ProtectedRoute component={Notifications} path="/notifications" {...props} />} />
-        <Route path="/settings" component={(props: any) => <ProtectedRoute component={ProfileSettings} path="/settings" {...props} />} />
-        <Route path="/camera-scan" component={(props: any) => <ProtectedRoute component={CameraScan} path="/camera-scan" {...props} />} />
-        <Route path="/profile" component={(props: any) => <ProtectedRoute component={Profile} path="/profile" {...props} />} />
-        
-        {/* Protected payment and banking routes */}
-        <Route path="/payment-page" component={(props: any) => <ProtectedRoute component={PaymentPage} path="/payment-page" {...props} />} />
-        <Route path="/payment" component={(props: any) => <ProtectedRoute component={PaymentPage} path="/payment" {...props} />} />
-        <Route path="/withdraw" component={(props: any) => <ProtectedRoute component={PaymentPage} path="/withdraw" {...props} />} />
-        <Route path="/special-offers" component={(props: any) => <ProtectedRoute component={PaymentPage} path="/special-offers" {...props} />} />
-        <Route path="/bank-accounts" component={(props: any) => <ProtectedRoute component={BankAccounts} path="/bank-accounts" {...props} />} />
-        
-        {/* KYC route - needs authentication but is part of onboarding */}
-        <Route path="/kyc" component={(props: any) => <ProtectedRoute component={Kyc} path="/kyc" {...props} />} />
-        
-        {/* Testing tools */}
-        <Route path="/test-fee-calculator" component={(props: any) => <ProtectedRoute component={TestFeeCalculator} path="/test-fee-calculator" {...props} />} />
+        {/* Protected routes */}
+        {protectedRoutes.map(({ path, component: Component }) => (
+          <Route
+            key={path}
+            path={path}
+            component={(props: any) => (
+              <ProtectedRoute component={Component} path={path} {...props} />
+            )}
+          />
+        ))}
         
         {/* Fallback route */}
         <Route component={NotFound} />

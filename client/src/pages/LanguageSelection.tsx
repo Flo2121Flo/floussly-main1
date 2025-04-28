@@ -1,87 +1,76 @@
-import { useLocation } from "wouter";
-import { motion } from "framer-motion";
-import { useTranslation } from "../lib/i18n";
-import { useLanguage } from "../context/LanguageContext";
-import LanguageSelector from "@/components/LanguageSelector";
+import { useTranslation } from 'react-i18next';
+import { useLocation } from 'wouter';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Globe } from 'lucide-react';
+
+const languages = [
+  {
+    code: 'en',
+    name: 'English',
+    nativeName: 'English',
+    flag: '🇬🇧'
+  },
+  {
+    code: 'fr',
+    name: 'Français',
+    nativeName: 'Français',
+    flag: '🇫🇷'
+  },
+  {
+    code: 'ar',
+    name: 'العربية',
+    nativeName: 'العربية',
+    flag: '🇸🇦',
+    rtl: true
+  },
+  {
+    code: 'ber',
+    name: 'Tamazight',
+    nativeName: 'ⵜⴰⵎⴰⵣⵉⵖⵜ',
+    flag: '🇲🇦'
+  }
+];
 
 export default function LanguageSelection() {
+  const { t, i18n } = useTranslation();
   const [_, setLocation] = useLocation();
-  const { t } = useTranslation();
-  const { setLanguage } = useLanguage();
 
-  const handleLanguageSelect = (lang: string) => {
-    setLanguage(lang as "en" | "fr" | "ar" | "ber");
-    setLocation("/login");
-  };
-
-  const container = {
-    hidden: { opacity: 0 },
-    show: {
-      opacity: 1,
-      transition: {
-        staggerChildren: 0.1
-      }
-    }
-  };
-
-  const item = {
-    hidden: { y: 20, opacity: 0 },
-    show: { y: 0, opacity: 1 }
+  const handleLanguageChange = (languageCode: string) => {
+    i18n.changeLanguage(languageCode);
+    localStorage.setItem('language', languageCode);
+    setLocation('/login');
   };
 
   return (
-    <div className="fixed inset-0 bg-background flex flex-col items-center justify-center z-40">
-      <motion.div
-        variants={container}
-        initial="hidden"
-        animate="show"
-        className="w-full max-w-md px-6"
-      >
-        <motion.h2 
-          variants={item}
-          className="font-poppins font-bold text-2xl text-primary mb-8 text-center"
-        >
-          {t("settings.language")}
-        </motion.h2>
-        
-        <div className="grid grid-cols-2 gap-4 w-full max-w-xs mx-auto">
-          <motion.button 
-            variants={item}
-            className="bg-card py-4 px-6 rounded-xl flex flex-col items-center justify-center card-shadow hover:bg-muted transition duration-200"
-            onClick={() => handleLanguageSelect("en")}
-          >
-            <span className="text-2xl mb-2">🇬🇧</span>
-            <span className="text-sm font-medium">English</span>
-          </motion.button>
-          
-          <motion.button 
-            variants={item}
-            className="bg-card py-4 px-6 rounded-xl flex flex-col items-center justify-center card-shadow hover:bg-muted transition duration-200"
-            onClick={() => handleLanguageSelect("fr")}
-          >
-            <span className="text-2xl mb-2">🇫🇷</span>
-            <span className="text-sm font-medium">Français</span>
-          </motion.button>
-          
-          <motion.button 
-            variants={item}
-            className="bg-card py-4 px-6 rounded-xl flex flex-col items-center justify-center card-shadow hover:bg-muted transition duration-200"
-            onClick={() => handleLanguageSelect("ar")}
-          >
-            <span className="text-2xl mb-2">🇲🇦</span>
-            <span className="text-sm font-medium font-tajawal">العربية</span>
-          </motion.button>
-          
-          <motion.button 
-            variants={item}
-            className="bg-card py-4 px-6 rounded-xl flex flex-col items-center justify-center card-shadow hover:bg-muted transition duration-200"
-            onClick={() => handleLanguageSelect("ber")}
-          >
-            <span className="text-2xl mb-2">🏳️</span>
-            <span className="text-sm font-medium">ⵜⴰⵎⴰⵣⵉⵖⵜ</span>
-          </motion.button>
-        </div>
-      </motion.div>
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-background to-muted p-4">
+      <Card className="w-full max-w-md">
+        <CardHeader className="space-y-1">
+          <div className="flex items-center justify-center mb-4">
+            <Globe className="h-12 w-12 text-primary" />
+          </div>
+          <CardTitle className="text-2xl text-center">{t('languageSelection.title')}</CardTitle>
+          <CardDescription className="text-center">
+            {t('languageSelection.description')}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4">
+          {languages.map((language) => (
+            <Button
+              key={language.code}
+              variant={i18n.language === language.code ? 'default' : 'outline'}
+              className="w-full h-16 text-lg"
+              onClick={() => handleLanguageChange(language.code)}
+            >
+              <span className="text-2xl mr-2">{language.flag}</span>
+              <span>{language.nativeName}</span>
+              {language.name !== language.nativeName && (
+                <span className="text-muted-foreground ml-2">({language.name})</span>
+              )}
+            </Button>
+          ))}
+        </CardContent>
+      </Card>
     </div>
   );
 }

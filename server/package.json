@@ -10,6 +10,7 @@
     "test": "jest"
   },
   "dependencies": {
+    "@types/uuid": "^10.0.0",
     "axios": "^1.6.7",
     "compression": "^1.7.4",
     "cookie-parser": "^1.4.6",
@@ -19,7 +20,10 @@
     "helmet": "^7.1.0",
     "joi": "^17.12.1",
     "morgan": "^1.10.0",
-    "winston": "^3.11.0"
+    "uuid": "^11.1.0",
+    "winston": "^3.11.0",
+    "zod": "^3.24.3",
+    "zod-validation-error": "^3.4.0"
   },
   "devDependencies": {
     "@aws-sdk/client-cognito-identity-provider": "^3.797.0",

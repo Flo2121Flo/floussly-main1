@@ -1,0 +1,51 @@
+{
+  "register": {
+    "title": "Create an Account",
+    "description": "Enter your details to get started",
+    "email": "Email",
+    "emailPlaceholder": "Enter your email",
+    "password": "Password",
+    "passwordPlaceholder": "Enter your password",
+    "confirmPassword": "Confirm Password",
+    "confirmPasswordPlaceholder": "Re-enter your password",
+    "submit": "Register",
+    "loading": "Creating account...",
+    "success": "Account created successfully!",
+    "error": "Failed to create account. Please try again.",
+    "loginLink": "Already have an account? Login"
+  },
+  "dashboard": {
+    "welcome": "Welcome back",
+    "subtitle": "Here's what's happening with your account today",
+    "sendMoney": "Send Money",
+    "requestMoney": "Request Money",
+    "payBills": "Pay Bills",
+    "topUp": "Top Up",
+    "send": "Send",
+    "request": "Request",
+    "pay": "Pay",
+    "addMoney": "Add Money",
+    "overview": "Overview",
+    "transactions": "Transactions",
+    "analytics": "Analytics",
+    "balance": "Available Balance",
+    "recentTransactions": "Recent Transactions",
+    "allTransactions": "All Transactions"
+  },
+  "navigation": {
+    "home": "Home",
+    "send": "Send",
+    "qr": "QR Code",
+    "daret": "Daret",
+    "agents": "Agents",
+    "finance": "Finance"
+  },
+  "language": {
+    "title": "Select Your Language",
+    "description": "Choose your preferred language to continue",
+    "en": "English",
+    "fr": "French",
+    "ar": "Arabic",
+    "ber": "Berber"
+  }
+} 
