@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 120">
+  <defs>
+    <linearGradient id="greenGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1B5E20;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#4C8C4A;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="goldGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#FFC107;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#FFA000;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Dotted circle -->
+  <circle cx="60" cy="60" r="45" fill="none" stroke="url(#greenGradient)" stroke-width="6" stroke-dasharray="6,9" />
+  
+  <!-- Gold coin -->
+  <circle cx="60" cy="60" r="30" fill="url(#goldGradient)" />
+  
+  <!-- Stylized dirham/dh symbol -->
+  <path d="M55,50 Q60,45 65,50 Q70,55 75,50" stroke="#8B4513" stroke-width="2" fill="none" />
+  <path d="M52,68 Q60,58 68,68" stroke="#8B4513" stroke-width="2" fill="none" />
+  
+  <!-- Floussly text -->
+  <text x="120" y="50" font-family="Poppins, sans-serif" font-size="36" font-weight="bold" fill="#1A2E35">Floussly</text>
+  
+  <!-- Arabic text -->
+  <text x="120" y="80" font-family="Tajawal, sans-serif" font-size="28" font-weight="bold" fill="#1A2E35">فلوسلي</text>
+</svg>

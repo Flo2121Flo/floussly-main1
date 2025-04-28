@@ -1,0 +1,58 @@
+{
+  "family": "floussly",
+  "networkMode": "awsvpc",
+  "executionRoleArn": "arn:aws:iam::ACCOUNT_ID:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::ACCOUNT_ID:role/flousslyTaskRole",
+  "containerDefinitions": [
+    {
+      "name": "floussly-app",
+      "image": "ACCOUNT_ID.dkr.ecr.REGION.amazonaws.com/floussly:latest",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 3000,
+          "hostPort": 3000,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        {
+          "name": "NODE_ENV",
+          "value": "production"
+        }
+      ],
+      "secrets": [
+        {
+          "name": "DATABASE_URL",
+          "valueFrom": "arn:aws:ssm:REGION:ACCOUNT_ID:parameter/floussly/DATABASE_URL"
+        },
+        {
+          "name": "REDIS_HOST",
+          "valueFrom": "arn:aws:ssm:REGION:ACCOUNT_ID:parameter/floussly/REDIS_HOST"
+        },
+        {
+          "name": "JWT_SECRET",
+          "valueFrom": "arn:aws:ssm:REGION:ACCOUNT_ID:parameter/floussly/JWT_SECRET"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/floussly",
+          "awslogs-region": "REGION",
+          "awslogs-stream-prefix": "ecs"
+        }
+      },
+      "healthCheck": {
+        "command": ["CMD-SHELL", "curl -f http://localhost:3000/health || exit 1"],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 60
+      }
+    }
+  ],
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "1024",
+  "memory": "2048"
+} 

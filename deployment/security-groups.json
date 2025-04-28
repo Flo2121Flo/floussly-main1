@@ -1,0 +1,81 @@
+{
+  "SecurityGroups": [
+    {
+      "GroupName": "floussly-backend-sg",
+      "Description": "Security group for Floussly backend servers",
+      "VpcId": "vpc-12345678",
+      "Rules": [
+        {
+          "IpProtocol": "tcp",
+          "FromPort": 80,
+          "ToPort": 80,
+          "CidrIp": "0.0.0.0/0",
+          "Description": "Allow HTTP traffic"
+        },
+        {
+          "IpProtocol": "tcp",
+          "FromPort": 443,
+          "ToPort": 443,
+          "CidrIp": "0.0.0.0/0",
+          "Description": "Allow HTTPS traffic"
+        },
+        {
+          "IpProtocol": "tcp",
+          "FromPort": 22,
+          "ToPort": 22,
+          "CidrIp": "10.0.0.0/16",
+          "Description": "Allow SSH from VPC"
+        }
+      ]
+    },
+    {
+      "GroupName": "floussly-rds-sg",
+      "Description": "Security group for Floussly RDS instance",
+      "VpcId": "vpc-12345678",
+      "Rules": [
+        {
+          "IpProtocol": "tcp",
+          "FromPort": 5432,
+          "ToPort": 5432,
+          "SourceSecurityGroupId": "sg-12345678",
+          "Description": "Allow PostgreSQL access from backend"
+        }
+      ]
+    },
+    {
+      "GroupName": "floussly-redis-sg",
+      "Description": "Security group for Floussly Redis instance",
+      "VpcId": "vpc-12345678",
+      "Rules": [
+        {
+          "IpProtocol": "tcp",
+          "FromPort": 6379,
+          "ToPort": 6379,
+          "SourceSecurityGroupId": "sg-12345678",
+          "Description": "Allow Redis access from backend"
+        }
+      ]
+    },
+    {
+      "GroupName": "floussly-load-balancer-sg",
+      "Description": "Security group for Floussly load balancer",
+      "VpcId": "vpc-12345678",
+      "Rules": [
+        {
+          "IpProtocol": "tcp",
+          "FromPort": 80,
+          "ToPort": 80,
+          "CidrIp": "0.0.0.0/0",
+          "Description": "Allow HTTP traffic"
+        },
+        {
+          "IpProtocol": "tcp",
+          "FromPort": 443,
+          "ToPort": 443,
+          "CidrIp": "0.0.0.0/0",
+          "Description": "Allow HTTPS traffic"
+        }
+      ]
+    }
+  ]
+} 

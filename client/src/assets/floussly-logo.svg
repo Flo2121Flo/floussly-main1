@@ -1,0 +1,38 @@
+<svg width="150" height="150" viewBox="0 0 150 150" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Dark green background -->
+  <rect width="150" height="150" rx="40" fill="#004D40" />
+  
+  <!-- Green circle with people -->
+  <path d="M75 22.5C45.67 22.5 22.5 45.67 22.5 75C22.5 104.33 45.67 127.5 75 127.5C104.33 127.5 127.5 104.33 127.5 75C127.5 45.67 104.33 22.5 75 22.5Z" fill="#004D40" />
+  
+  <!-- Individual circles and connectors representing people around the circle -->
+  <circle cx="75" cy="35" r="7.5" fill="#2E8B57" />
+  <path d="M90 40 L100 30" stroke="#2E8B57" stroke-width="7" stroke-linecap="round" />
+  
+  <circle cx="105" cy="50" r="7.5" fill="#2E8B57" />
+  <path d="M112 65 L122 60" stroke="#2E8B57" stroke-width="7" stroke-linecap="round" />
+  
+  <circle cx="115" cy="75" r="7.5" fill="#2E8B57" />
+  <path d="M112 90 L122 95" stroke="#2E8B57" stroke-width="7" stroke-linecap="round" />
+  
+  <circle cx="105" cy="100" r="7.5" fill="#2E8B57" />
+  <path d="M90 110 L100 120" stroke="#2E8B57" stroke-width="7" stroke-linecap="round" />
+  
+  <circle cx="75" cy="115" r="7.5" fill="#2E8B57" />
+  <path d="M60 110 L50 120" stroke="#2E8B57" stroke-width="7" stroke-linecap="round" />
+  
+  <circle cx="45" cy="100" r="7.5" fill="#2E8B57" />
+  <path d="M38 85 L28 90" stroke="#2E8B57" stroke-width="7" stroke-linecap="round" />
+  
+  <circle cx="35" cy="75" r="7.5" fill="#2E8B57" />
+  <path d="M38 60 L28 55" stroke="#2E8B57" stroke-width="7" stroke-linecap="round" />
+  
+  <circle cx="45" cy="50" r="7.5" fill="#2E8B57" />
+  <path d="M60 40 L50 30" stroke="#2E8B57" stroke-width="7" stroke-linecap="round" />
+  
+  <!-- Gold circle in the center -->
+  <circle cx="75" cy="75" r="25" fill="#DAA520" />
+  
+  <!-- Floussly text in the center -->
+  <text x="75" y="80" font-family="Arial, sans-serif" font-size="12" font-weight="bold" fill="#004D40" text-anchor="middle">Floussly</text>
+</svg>

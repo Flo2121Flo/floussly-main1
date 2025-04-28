@@ -1,0 +1,156 @@
+{
+  "Alarms": [
+    {
+      "AlarmName": "HighCPUUtilization",
+      "MetricName": "CPUUtilization",
+      "Namespace": "AWS/ECS",
+      "Statistic": "Average",
+      "Dimensions": [
+        {
+          "Name": "ClusterName",
+          "Value": "floussly-cluster"
+        },
+        {
+          "Name": "ServiceName",
+          "Value": "floussly-service"
+        }
+      ],
+      "Period": 300,
+      "EvaluationPeriods": 2,
+      "Threshold": 80,
+      "ComparisonOperator": "GreaterThanThreshold",
+      "AlarmActions": ["arn:aws:sns:eu-west-3:123456789012:floussly-alerts"],
+      "OKActions": ["arn:aws:sns:eu-west-3:123456789012:floussly-alerts"]
+    },
+    {
+      "AlarmName": "HighMemoryUtilization",
+      "MetricName": "MemoryUtilization",
+      "Namespace": "AWS/ECS",
+      "Statistic": "Average",
+      "Dimensions": [
+        {
+          "Name": "ClusterName",
+          "Value": "floussly-cluster"
+        },
+        {
+          "Name": "ServiceName",
+          "Value": "floussly-service"
+        }
+      ],
+      "Period": 300,
+      "EvaluationPeriods": 2,
+      "Threshold": 80,
+      "ComparisonOperator": "GreaterThanThreshold",
+      "AlarmActions": ["arn:aws:sns:eu-west-3:123456789012:floussly-alerts"],
+      "OKActions": ["arn:aws:sns:eu-west-3:123456789012:floussly-alerts"]
+    },
+    {
+      "AlarmName": "HighErrorRate",
+      "MetricName": "5XXError",
+      "Namespace": "AWS/ApiGateway",
+      "Statistic": "Sum",
+      "Dimensions": [
+        {
+          "Name": "ApiName",
+          "Value": "floussly-api"
+        }
+      ],
+      "Period": 300,
+      "EvaluationPeriods": 1,
+      "Threshold": 10,
+      "ComparisonOperator": "GreaterThanThreshold",
+      "AlarmActions": ["arn:aws:sns:eu-west-3:123456789012:floussly-alerts"],
+      "OKActions": ["arn:aws:sns:eu-west-3:123456789012:floussly-alerts"]
+    },
+    {
+      "AlarmName": "HighLatency",
+      "MetricName": "Latency",
+      "Namespace": "AWS/ApiGateway",
+      "Statistic": "p99",
+      "Dimensions": [
+        {
+          "Name": "ApiName",
+          "Value": "floussly-api"
+        }
+      ],
+      "Period": 300,
+      "EvaluationPeriods": 2,
+      "Threshold": 1000,
+      "ComparisonOperator": "GreaterThanThreshold",
+      "AlarmActions": ["arn:aws:sns:eu-west-3:123456789012:floussly-alerts"],
+      "OKActions": ["arn:aws:sns:eu-west-3:123456789012:floussly-alerts"]
+    },
+    {
+      "AlarmName": "HighRequestCount",
+      "MetricName": "Count",
+      "Namespace": "AWS/ApiGateway",
+      "Statistic": "Sum",
+      "Dimensions": [
+        {
+          "Name": "ApiName",
+          "Value": "floussly-api"
+        }
+      ],
+      "Period": 300,
+      "EvaluationPeriods": 1,
+      "Threshold": 10000,
+      "ComparisonOperator": "GreaterThanThreshold",
+      "AlarmActions": ["arn:aws:sns:eu-west-3:123456789012:floussly-alerts"],
+      "OKActions": ["arn:aws:sns:eu-west-3:123456789012:floussly-alerts"]
+    },
+    {
+      "AlarmName": "RDSHighCPUUtilization",
+      "MetricName": "CPUUtilization",
+      "Namespace": "AWS/RDS",
+      "Statistic": "Average",
+      "Dimensions": [
+        {
+          "Name": "DBInstanceIdentifier",
+          "Value": "floussly-db"
+        }
+      ],
+      "Period": 300,
+      "EvaluationPeriods": 2,
+      "Threshold": 80,
+      "ComparisonOperator": "GreaterThanThreshold",
+      "AlarmActions": ["arn:aws:sns:eu-west-3:123456789012:floussly-alerts"],
+      "OKActions": ["arn:aws:sns:eu-west-3:123456789012:floussly-alerts"]
+    },
+    {
+      "AlarmName": "RDSHighConnections",
+      "MetricName": "DatabaseConnections",
+      "Namespace": "AWS/RDS",
+      "Statistic": "Average",
+      "Dimensions": [
+        {
+          "Name": "DBInstanceIdentifier",
+          "Value": "floussly-db"
+        }
+      ],
+      "Period": 300,
+      "EvaluationPeriods": 2,
+      "Threshold": 100,
+      "ComparisonOperator": "GreaterThanThreshold",
+      "AlarmActions": ["arn:aws:sns:eu-west-3:123456789012:floussly-alerts"],
+      "OKActions": ["arn:aws:sns:eu-west-3:123456789012:floussly-alerts"]
+    },
+    {
+      "AlarmName": "RDSLowFreeStorage",
+      "MetricName": "FreeStorageSpace",
+      "Namespace": "AWS/RDS",
+      "Statistic": "Average",
+      "Dimensions": [
+        {
+          "Name": "DBInstanceIdentifier",
+          "Value": "floussly-db"
+        }
+      ],
+      "Period": 300,
+      "EvaluationPeriods": 2,
+      "Threshold": 10000000000,
+      "ComparisonOperator": "LessThanThreshold",
+      "AlarmActions": ["arn:aws:sns:eu-west-3:123456789012:floussly-alerts"],
+      "OKActions": ["arn:aws:sns:eu-west-3:123456789012:floussly-alerts"]
+    }
+  ]
+} 

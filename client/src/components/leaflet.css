@@ -1,0 +1,22 @@
+.leaflet-container {
+  height: 100%;
+  width: 100%;
+  border-radius: 0.5rem;
+  z-index: 1;
+}
+
+.leaflet-control-container .leaflet-control {
+  z-index: 10;
+}
+
+.leaflet-control-attribution {
+  font-size: 8px;
+}
+
+.agent-marker {
+  color: #e11d48;
+}
+
+.user-marker {
+  color: #2563eb;
+}

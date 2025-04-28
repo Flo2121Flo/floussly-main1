@@ -1,0 +1,46 @@
+{
+  "DBInstanceIdentifier": "floussly-db",
+  "BackupRetentionPeriod": 7,
+  "PreferredBackupWindow": "03:00-04:00",
+  "PreferredMaintenanceWindow": "sun:04:00-sun:05:00",
+  "CopyTagsToSnapshot": true,
+  "DeletionProtection": true,
+  "MultiAZ": true,
+  "StorageEncrypted": true,
+  "KmsKeyId": "arn:aws:kms:eu-west-3:123456789012:key/1234abcd-12ab-34cd-56ef-1234567890ab",
+  "MonitoringInterval": 60,
+  "EnablePerformanceInsights": true,
+  "PerformanceInsightsRetentionPeriod": 7,
+  "BackupConfiguration": {
+    "AutomatedBackups": {
+      "Enabled": true,
+      "RetentionPeriod": 7,
+      "PreferredBackupWindow": "03:00-04:00",
+      "CopyTagsToSnapshot": true
+    },
+    "PointInTimeRecovery": {
+      "Enabled": true
+    },
+    "ExportToS3": {
+      "Enabled": true,
+      "S3Bucket": "floussly-db-backups",
+      "S3Prefix": "daily",
+      "Schedule": "cron(0 4 * * ? *)"
+    }
+  },
+  "MaintenanceConfiguration": {
+    "AutoMinorVersionUpgrade": true,
+    "ApplyImmediately": false,
+    "PreferredMaintenanceWindow": "sun:04:00-sun:05:00"
+  },
+  "MonitoringConfiguration": {
+    "EnhancedMonitoring": true,
+    "MonitoringInterval": 60,
+    "MonitoringRoleArn": "arn:aws:iam::123456789012:role/rds-monitoring-role"
+  },
+  "PerformanceInsightsConfiguration": {
+    "Enabled": true,
+    "RetentionPeriod": 7,
+    "KmsKeyId": "arn:aws:kms:eu-west-3:123456789012:key/1234abcd-12ab-34cd-56ef-1234567890ab"
+  }
+} 

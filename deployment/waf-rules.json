@@ -1,0 +1,141 @@
+{
+  "WebACL": {
+    "Name": "floussly-waf",
+    "DefaultAction": {
+      "Allow": {}
+    },
+    "Scope": "REGIONAL",
+    "VisibilityConfig": {
+      "SampledRequestsEnabled": true,
+      "CloudWatchMetricsEnabled": true,
+      "MetricName": "floussly-waf"
+    },
+    "Rules": [
+      {
+        "Name": "RateLimit",
+        "Priority": 1,
+        "Action": {
+          "Block": {}
+        },
+        "Statement": {
+          "RateBasedStatement": {
+            "Limit": 2000,
+            "AggregateKeyType": "IP"
+          }
+        },
+        "VisibilityConfig": {
+          "SampledRequestsEnabled": true,
+          "CloudWatchMetricsEnabled": true,
+          "MetricName": "RateLimit"
+        }
+      },
+      {
+        "Name": "SQLInjection",
+        "Priority": 2,
+        "Action": {
+          "Block": {}
+        },
+        "Statement": {
+          "SqliMatchStatement": {
+            "FieldToMatch": {
+              "AllQueryArguments": {}
+            },
+            "TextTransformations": [
+              {
+                "Priority": 0,
+                "Type": "NONE"
+              }
+            ]
+          }
+        },
+        "VisibilityConfig": {
+          "SampledRequestsEnabled": true,
+          "CloudWatchMetricsEnabled": true,
+          "MetricName": "SQLInjection"
+        }
+      },
+      {
+        "Name": "XSS",
+        "Priority": 3,
+        "Action": {
+          "Block": {}
+        },
+        "Statement": {
+          "XssMatchStatement": {
+            "FieldToMatch": {
+              "AllQueryArguments": {}
+            },
+            "TextTransformations": [
+              {
+                "Priority": 0,
+                "Type": "NONE"
+              }
+            ]
+          }
+        },
+        "VisibilityConfig": {
+          "SampledRequestsEnabled": true,
+          "CloudWatchMetricsEnabled": true,
+          "MetricName": "XSS"
+        }
+      },
+      {
+        "Name": "BadBots",
+        "Priority": 4,
+        "Action": {
+          "Block": {}
+        },
+        "Statement": {
+          "NotStatement": {
+            "Statement": {
+              "ByteMatchStatement": {
+                "FieldToMatch": {
+                  "SingleHeader": {
+                    "Name": "user-agent"
+                  }
+                },
+                "PositionalConstraint": "CONTAINS",
+                "SearchString": "curl|wget|python-requests|java|apachebench|jmeter|postman|insomnia|thunder client",
+                "TextTransformations": [
+                  {
+                    "Priority": 0,
+                    "Type": "LOWERCASE"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "VisibilityConfig": {
+          "SampledRequestsEnabled": true,
+          "CloudWatchMetricsEnabled": true,
+          "MetricName": "BadBots"
+        }
+      },
+      {
+        "Name": "IPReputation",
+        "Priority": 5,
+        "Action": {
+          "Block": {}
+        },
+        "Statement": {
+          "IPSetReferenceStatement": {
+            "ARN": "arn:aws:wafv2:eu-west-3:123456789012:regional/ipset/floussly-bad-ips/12345678-1234-1234-1234-123456789012"
+          }
+        },
+        "VisibilityConfig": {
+          "SampledRequestsEnabled": true,
+          "CloudWatchMetricsEnabled": true,
+          "MetricName": "IPReputation"
+        }
+      }
+    ]
+  },
+  "IPSet": {
+    "Name": "floussly-bad-ips",
+    "Description": "IP addresses known to be malicious",
+    "Scope": "REGIONAL",
+    "IPAddressVersion": "IPV4",
+    "Addresses": []
+  }
+} 

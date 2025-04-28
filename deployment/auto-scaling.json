@@ -1,0 +1,79 @@
+{
+  "AutoScalingGroup": {
+    "AutoScalingGroupName": "floussly-backend-asg",
+    "LaunchTemplate": {
+      "LaunchTemplateName": "floussly-backend-lt",
+      "Version": "$Latest",
+      "LaunchTemplateData": {
+        "ImageId": "ami-1234567890abcdef0",
+        "InstanceType": "t3.medium",
+        "KeyName": "floussly-key",
+        "SecurityGroupIds": ["sg-12345678"],
+        "IamInstanceProfile": {
+          "Name": "floussly-backend-role"
+        },
+        "UserData": "IyEvYmluL2Jhc2gKc3VkbyB5dW0gdXBkYXRlIC15CnN1ZG8geXVtIGluc3RhbGwgLXkgZG9ja2VyCnN1ZG8gc3lzdGVtY3RsIHN0YXJ0IGRvY2tlcgpzdWRvIHN5c3RlbWN0bCBlbmFibGUgZG9ja2VyCg=="
+      }
+    },
+    "MinSize": 2,
+    "MaxSize": 10,
+    "DesiredCapacity": 2,
+    "VPCZoneIdentifier": ["subnet-12345678", "subnet-87654321", "subnet-abcdef12"],
+    "TargetGroupARNs": ["arn:aws:elasticloadbalancing:eu-west-3:123456789012:targetgroup/floussly-tg/1234567890123456"],
+    "HealthCheckType": "ELB",
+    "HealthCheckGracePeriod": 300,
+    "TerminationPolicies": ["OldestInstance"],
+    "Tags": [
+      {
+        "Key": "Name",
+        "Value": "floussly-backend",
+        "PropagateAtLaunch": true
+      },
+      {
+        "Key": "Environment",
+        "Value": "production",
+        "PropagateAtLaunch": true
+      }
+    ]
+  },
+  "ScalingPolicies": [
+    {
+      "PolicyName": "floussly-cpu-scaling",
+      "PolicyType": "TargetTrackingScaling",
+      "TargetTrackingConfiguration": {
+        "PredefinedMetricSpecification": {
+          "PredefinedMetricType": "ASGAverageCPUUtilization"
+        },
+        "TargetValue": 70.0,
+        "DisableScaleIn": false
+      }
+    },
+    {
+      "PolicyName": "floussly-memory-scaling",
+      "PolicyType": "TargetTrackingScaling",
+      "TargetTrackingConfiguration": {
+        "PredefinedMetricSpecification": {
+          "PredefinedMetricType": "ASGAverageMemoryUtilization"
+        },
+        "TargetValue": 70.0,
+        "DisableScaleIn": false
+      }
+    }
+  ],
+  "ScheduledActions": [
+    {
+      "ScheduledActionName": "floussly-scale-up",
+      "Recurrence": "0 8 * * *",
+      "MinSize": 4,
+      "MaxSize": 10,
+      "DesiredCapacity": 4
+    },
+    {
+      "ScheduledActionName": "floussly-scale-down",
+      "Recurrence": "0 20 * * *",
+      "MinSize": 2,
+      "MaxSize": 10,
+      "DesiredCapacity": 2
+    }
+  ]
+} 

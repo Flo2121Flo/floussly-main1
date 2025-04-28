@@ -1,0 +1,93 @@
+You are a senior full-stack fintech engineer. Build me the full MVP for "Floussly" — a Moroccan superapp for personal and group money management.
+
+## General Requirements:
+- Use the uploaded logo and apply it as the main branding (favicon + app icon + splash).
+- Mobile-first responsive design (Flutter or HTML/CSS/JS if web).
+- Full-stack with Node.js backend and Flutter frontend (or Web if easier).
+- Multilingual support: Arabic, French, English, Amazigh.
+- Dark mode toggle.
+
+## Features:
+### 1. **Authentication & Onboarding**
+- AWS Cognito for signup/login with OTP (SMS/Email).
+- KYC: Upload ID card + selfie verification (store securely in S3).
+- Role-based login (User / Agent / Admin).
+
+### 2. **Wallet System**
+- Top-up and withdraw via:
+  - PayDunya API
+  - M2T API
+  - Credit Agricole du Maroc API (mock endpoints or real if accessible)
+- Show current balance, top-up history, and withdraw history.
+
+### 3. **P2P Transfers**
+- Instant money transfers between users.
+- Transfer fee: 1.5%
+- Show real-time status: Pending / Complete / Failed.
+- SMS & in-app notification for both sender and receiver.
+
+### 4. **Tontine (Daret) System**
+- Create / join a tontine.
+- Rotation logic (first user receives first, etc.).
+- Payment tracking for each member.
+- Ability to notify members before due date.
+
+### 5. **QR Code Payment**
+- Generate a unique QR code per user.
+- Other users can scan and send money instantly.
+- Works for merchants too.
+
+### 6. **Personal Finance Dashboard**
+- Graphs: Expenses by category, income vs. expenses, monthly summary.
+- Set budgets, receive alerts.
+- Export data as CSV or PDF.
+
+### 7. **Agent Network Map**
+- Interactive map with nearest agents.
+- Store agent contact, location, hours.
+- Admin dashboard to manage agents.
+
+### 8. **Notifications**
+- AWS SNS integration for real-time alerts.
+- Push notifications for transfers, reminders, KYC approval.
+
+### 9. **Security**
+- JWT + OAuth2
+- AWS KMS for encryption
+- IAM for roles
+- API Gateway (with throttling + access control)
+- VPC isolation
+- TLS everywhere
+
+## Backend:
+- Node.js + Express
+- AWS services:
+  - Cognito (Auth)
+  - S3 (Storage)
+  - RDS (MySQL/Postgres for structured data)
+  - DynamoDB (for flexible user activity logs)
+  - SNS (notifications)
+  - Lambda (serverless for wallet calculations)
+  - KMS + IAM
+  - API Gateway
+
+## Frontend:
+- Flutter (preferred for iOS/Android) or Responsive Web (HTML/CSS/JS)
+- Replit-hosted with preview
+- Use your uploaded logo throughout
+- Allow changing app language from settings
+
+## Database:
+- RDS for users, wallets, transactions, tontines
+- DynamoDB for activity logs, notification logs
+
+## Optional Enhancements:
+- Referral system (referral code, reward logic)
+- Invite friends via WhatsApp/SMS
+- Light gamification badges (e.g. "First Transfer", "Tontine Boss")
+
+## Deliverables:
+- Fully functional MVP on Replit
+- Clear instructions to test every feature
+- Deployment-ready version
+- Dummy data prefilled
