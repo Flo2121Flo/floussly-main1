@@ -1,0 +1,27 @@
+name: 'Environments'
+
+on:
+  push:
+    branches: [ main, develop ]
+
+jobs:
+  create-environments:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create environments
+        run: |
+          echo "Creating environments..."
+          
+          # Create staging environment
+          curl -X POST \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/${{ github.repository }}/environments" \
+            -d '{"name":"staging","deployment_branch_policy":{"protected_branches":false,"custom_branches":["develop"]}}'
+          
+          # Create production environment
+          curl -X POST \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/${{ github.repository }}/environments" \
+            -d '{"name":"production","deployment_branch_policy":{"protected_branches":true,"custom_branches":["main"]}}' 
