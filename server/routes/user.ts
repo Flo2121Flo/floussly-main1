@@ -15,7 +15,6 @@ router.post('/logout', authenticate, userController.logout.bind(userController))
 // Profile routes
 router.get('/profile', authenticate, userController.getProfile.bind(userController));
 router.put('/profile', authenticate, validate(userSchema.update), userController.updateProfile.bind(userController));
-router.put('/password', authenticate, validate(userSchema.changePassword), userController.changePassword.bind(userController));
 
 // Password reset routes
 router.post('/password/reset-request', validate(userSchema.requestPasswordReset), userController.requestPasswordReset.bind(userController));

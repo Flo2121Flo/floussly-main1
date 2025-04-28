@@ -37,7 +37,7 @@ const defaultCenter = {
   lng: -7.5898
 };
 
-export default function GoogleMapComponent({ agents, onAgentSelect }: GoogleMapComponentProps) {
+export default function GoogleMapsView({ agents, onAgentSelect }: GoogleMapComponentProps) {
   const { t } = useTranslation();
   const [map, setMap] = useState<google.maps.Map | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);

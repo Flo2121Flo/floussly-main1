@@ -7,14 +7,13 @@ import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import { config } from './config';
 import logger from './utils/logger';
+import transactionRoutes from './routes/transactions';
+import webhookRoutes from './routes/webhooks';
+import { errorHandler } from './middleware/errorHandler';
 
 // Import routes
-import paymentRoutes from './routes/payment';
-import bankRoutes from './routes/bank';
-import storageRoutes from './routes/storage';
 import userRoutes from './routes/user';
 import healthRoutes from './routes/health';
-import bankingRoutes from './routes/banking';
 
 const app = express();
 
@@ -31,8 +30,8 @@ app.use(cors(config.security.cors));
 
 // Rate limiting
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
+  windowMs: 15 * 60 * 1000,
+  max: 100,
   message: 'Too many requests from this IP, please try again later'
 });
 app.use(limiter);
@@ -43,18 +42,13 @@ app.get('/health', (req, res) => {
 });
 
 // Routes
-app.use('/api/payments', paymentRoutes);
-app.use('/api/banks', bankRoutes);
-app.use('/api/storage', storageRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/health', healthRoutes);
-app.use('/api/banking', bankingRoutes);
+app.use('/api/transactions', transactionRoutes);
+app.use('/api/webhooks', webhookRoutes);
 
 // Error handling middleware
-app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
-  logger.error('Unhandled error:', err);
-  res.status(500).json({ error: 'Internal server error' });
-});
+app.use(errorHandler);
 
 // Start server
 const PORT = config.port;

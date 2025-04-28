@@ -1,63 +1,39 @@
 import { Request, Response, NextFunction } from 'express';
+import { AppError } from '../utils/AppError';
 import logger from '../utils/logger';
 
-export class AppError extends Error {
-  statusCode: number;
-  status: string;
-  isOperational: boolean;
-
-  constructor(message: string, statusCode: number) {
-    super(message);
-    this.statusCode = statusCode;
-    this.status = `${statusCode}`.startsWith('4') ? 'fail' : 'error';
-    this.isOperational = true;
-
-    Error.captureStackTrace(this, this.constructor);
-  }
-}
-
 export const errorHandler = (
-  err: AppError,
+  err: Error,
   req: Request,
   res: Response,
   next: NextFunction
 ) => {
-  err.statusCode = err.statusCode || 500;
-  err.status = err.status || 'error';
+  logger.error('Error:', err);
 
-  if (process.env.NODE_ENV === 'development') {
-    logger.error({
-      message: err.message,
-      stack: err.stack,
-      path: req.path,
-      method: req.method,
-      body: req.body,
-      query: req.query,
-      params: req.params
+  if (err instanceof AppError) {
+    return res.status(err.statusCode).json({
+      error: err.message
     });
-
-    res.status(err.statusCode).json({
-      status: err.status,
-      error: err,
-      message: err.message,
-      stack: err.stack
-    });
-  } else {
-    // Production error response
-    if (err.isOperational) {
-      res.status(err.statusCode).json({
-        status: err.status,
-        message: err.message
-      });
-    } else {
-      // Programming or unknown errors
-      logger.error('ERROR 💥', err);
-      res.status(500).json({
-        status: 'error',
-        message: 'Something went wrong!'
-      });
-    }
   }
+
+  // Handle specific error types
+  if (err.name === 'ValidationError') {
+    return res.status(400).json({
+      error: 'Validation error',
+      details: err.message
+    });
+  }
+
+  if (err.name === 'UnauthorizedError') {
+    return res.status(401).json({
+      error: 'Unauthorized'
+    });
+  }
+
+  // Default error
+  return res.status(500).json({
+    error: 'Internal server error'
+  });
 };
 
 export const catchAsync = (fn: Function) => {

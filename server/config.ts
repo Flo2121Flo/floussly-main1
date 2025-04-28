@@ -36,6 +36,9 @@ interface Config {
     user: string;
     password: string;
     database: string;
+    url: string;
+    poolSize: number;
+    ssl: boolean;
   };
   redis: {
     host: string;
@@ -140,6 +143,9 @@ export const config: Config = {
     user: process.env.DB_USER || 'postgres',
     password: process.env.DB_PASSWORD || 'postgres',
     database: process.env.DB_NAME || 'floussly',
+    url: process.env.DATABASE_URL || `postgres://${process.env.DB_USER || 'postgres'}:${process.env.DB_PASSWORD || 'postgres'}@${process.env.DB_HOST || 'localhost'}:${process.env.DB_PORT || '5432'}/${process.env.DB_NAME || 'floussly'}`,
+    poolSize: parseInt(process.env.DB_POOL_SIZE || '20', 10),
+    ssl: process.env.DB_SSL === 'true'
   },
   redis: {
     host: process.env.REDIS_HOST || 'localhost',
@@ -154,7 +160,7 @@ export const config: Config = {
   },
   jwt: {
     secret: process.env.JWT_SECRET || 'your-secret-key',
-    expiresIn: process.env.JWT_EXPIRES_IN || '1d',
+    expiresIn: process.env.JWT_EXPIRES_IN || '24h',
   },
   email: {
     host: process.env.EMAIL_HOST || 'smtp.gmail.com',
@@ -166,8 +172,8 @@ export const config: Config = {
     },
   },
   rateLimit: {
-    window: parseInt(process.env.RATE_LIMIT_WINDOW || '900000', 10), // 15 minutes
-    max: parseInt(process.env.RATE_LIMIT_MAX || '100', 10),
+    window: 15 * 60 * 1000, // 15 minutes
+    max: 100,
   },
   security: securityConfig,
   moroccanBank: {

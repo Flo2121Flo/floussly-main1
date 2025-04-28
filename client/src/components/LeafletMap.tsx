@@ -87,7 +87,7 @@ interface LeafletMapProps {
   className?: string;
 }
 
-export default function LeafletMap({ 
+export default function OpenStreetMapView({ 
   agents, 
   onAgentSelect, 
   className = ''

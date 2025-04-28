@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { CognitoIdentityProvider } from '@aws-sdk/client-cognito-identity-provider';
 import { AppError } from '../utils/error';
 import logger from '../utils/logger';
+import prisma from '../database/schema';
 
 // Extend Express Request type to include user
 declare module 'express' {
@@ -19,49 +20,43 @@ const cognito = new CognitoIdentityProvider({
   region: process.env.AWS_REGION || 'us-east-1'
 });
 
-export const authenticate = async (req: Request, res: Response, next: NextFunction) => {
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+
+export const authenticateUser = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const token = req.headers.authorization?.split(' ')[1];
     
     if (!token) {
-      throw new AppError('No token provided', 401);
+      return res.status(401).json({ error: 'Authentication required' });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || '') as jwt.JwtPayload;
-    
-    if (!decoded.sub) {
-      throw new AppError('Invalid token', 401);
-    }
-
-    const user = await cognito.getUser({
-      AccessToken: token
+    const decoded = jwt.verify(token, JWT_SECRET) as { userId: string };
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.userId },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        kyc_status: true
+      }
     });
 
-    if (!user.UserAttributes) {
-      throw new AppError('User not found', 404);
+    if (!user) {
+      return res.status(401).json({ error: 'User not found' });
     }
 
-    const email = user.UserAttributes.find(attr => attr.Name === 'email')?.Value;
-    const phone = user.UserAttributes.find(attr => attr.Name === 'phone_number')?.Value;
-    const role = user.UserAttributes.find(attr => attr.Name === 'custom:role')?.Value || 'user';
-
-    req.user = {
-      email: email || '',
-      phone: phone || '',
-      role
-    };
-
+    req.user = user;
     next();
   } catch (error) {
-    logger.error('Authentication error:', error);
-    next(new AppError('Authentication failed', 401));
+    return res.status(401).json({ error: 'Invalid token' });
   }
 };
 
-export const authorize = (roles: string[]) => {
+export const requireRole = (roles: string[]) => {
   return (req: Request, res: Response, next: NextFunction) => {
-    if (!req.user) {
-      return next(new AppError('User not authenticated', 401));
+    if (!roles.includes(req.user.role)) {
+      return res.status(403).json({ error: 'Insufficient permissions' });
     }
 
     if (!roles.includes(req.user.role)) {

@@ -1,6 +1,6 @@
 import { useTranslation } from "../lib/i18n";
 import { useState, useRef, useEffect } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "../lib/queryClient";
 import { useToast } from "../hooks/use-toast";
 import { 
@@ -12,14 +12,14 @@ import { useLocation } from "wouter";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
+import { BankAccount } from '../types/bank';
+import BankAccountList from '../components/bank/BankAccountList';
+import BankAccountForm from '../components/bank/BankAccountForm';
+import { Button } from '../components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
 
 // UI components
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
   DialogClose,
   DialogFooter,
   DialogDescription,
@@ -50,7 +50,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "../components/ui/alert-dialog";
-import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Switch } from "../components/ui/switch";
 import { Label } from "../components/ui/label";
@@ -98,11 +97,9 @@ export default function BankAccounts() {
   const { t } = useTranslation();
   const [location, setLocation] = useLocation();
   const { toast } = useToast();
-  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
-  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [isWithdrawDialogOpen, setIsWithdrawDialogOpen] = useState(false);
-  const [selectedAccount, setSelectedAccount] = useState<any>({});
+  const queryClient = useQueryClient();
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [selectedAccount, setSelectedAccount] = useState<BankAccount | undefined>();
   const [activeTab, setActiveTab] = useState("all");
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -113,14 +110,13 @@ export default function BankAccounts() {
   const userId = 1; // Demo user ID
   
   // Fetch bank accounts
-  const { data: bankAccounts } = useQuery({
-    queryKey: ['/api/bank-accounts'],
-    queryFn: () => apiRequest('GET', `/api/bank-accounts?userId=${userId}`)
-      .then(res => res.json())
-      .then(data => {
-        setDataIsLoading(false);
-        return data.success ? data.accounts : [];
-      })
+  const { data: accounts = [], isLoading, error } = useQuery<BankAccount[]>({
+    queryKey: ['bankAccounts'],
+    queryFn: async () => {
+      const response = await apiRequest('GET', `/api/bank-accounts?userId=${userId}`);
+      setDataIsLoading(false);
+      return response.json().then(data => data.success ? data.accounts : []);
+    },
   });
 
   // Clear the copy timeout on unmount
@@ -148,80 +144,79 @@ export default function BankAccounts() {
   
   // Open withdrawal dialog when bank accounts are loaded and we have a withdrawal amount
   useEffect(() => {
-    if (bankAccounts && withdrawAmount !== null && !dataIsLoading && bankAccounts.length > 0) {
+    if (accounts && withdrawAmount !== null && !dataIsLoading && accounts.length > 0) {
       // Set the default account as selected, or the first account if no default exists
-      const defaultAccount = bankAccounts.find((account: any) => account.isDefault) || bankAccounts[0];
+      const defaultAccount = accounts.find((account: any) => account.isDefault) || accounts[0];
       setSelectedAccount(defaultAccount);
-      setIsWithdrawDialogOpen(true);
+      setIsFormOpen(true);
     }
-  }, [bankAccounts, withdrawAmount, dataIsLoading]);
+  }, [accounts, withdrawAmount, dataIsLoading]);
 
   // Create account mutation
-  const createAccountMutation = useMutation({
-    mutationFn: async (data: BankAccountFormValues) => {
-      const res = await apiRequest('POST', '/api/bank-accounts', data);
-      return await res.json();
+  const createMutation = useMutation({
+    mutationFn: async (account: Omit<BankAccount, 'id'>) => {
+      const response = await apiRequest('POST', '/api/bank-accounts', account);
+      return await response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/bank-accounts'] });
-      setIsAddDialogOpen(false);
       toast({
-        title: t("bankAccounts.successful").replace("{{action}}", "added"),
-        description: t("bankAccounts.accountAdded"),
+        title: t('bank.accountCreated'),
+        description: t('bank.accountCreatedMessage'),
       });
+      setIsFormOpen(false);
     },
-    onError: (error: Error) => {
+    onError: (error) => {
       toast({
-        title: t("errors.title"),
-        description: error.message || t("bankAccounts.errors.createFailed"),
-        variant: "destructive",
+        title: t('common.error'),
+        description: error.message,
+        variant: 'destructive',
       });
     },
   });
 
   // Update account mutation
-  const updateAccountMutation = useMutation({
-    mutationFn: async (data: BankAccountFormValues & { id: number }) => {
-      const { id, ...rest } = data;
-      const res = await apiRequest('PATCH', `/api/bank-accounts/${id}`, rest);
-      return await res.json();
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, ...account }: BankAccount) => {
+      const response = await apiRequest('PUT', `/api/bank-accounts/${id}`, account);
+      return await response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/bank-accounts'] });
-      setIsEditDialogOpen(false);
       toast({
-        title: t("bankAccounts.successful").replace("{{action}}", "updated"),
-        description: t("bankAccounts.accountUpdated"),
+        title: t('bank.accountUpdated'),
+        description: t('bank.accountUpdatedMessage'),
       });
+      setIsFormOpen(false);
+      setSelectedAccount(undefined);
     },
-    onError: (error: Error) => {
+    onError: (error) => {
       toast({
-        title: t("errors.title"),
-        description: error.message || t("bankAccounts.errors.updateFailed"),
-        variant: "destructive",
+        title: t('common.error'),
+        description: error.message,
+        variant: 'destructive',
       });
     },
   });
 
   // Delete account mutation
-  const deleteAccountMutation = useMutation({
-    mutationFn: async (id: number) => {
-      const res = await apiRequest('DELETE', `/api/bank-accounts/${id}?userId=${userId}`);
-      return await res.json();
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const response = await apiRequest('DELETE', `/api/bank-accounts/${id}?userId=${userId}`);
+      return await response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/bank-accounts'] });
-      setIsDeleteDialogOpen(false);
       toast({
-        title: t("bankAccounts.successful").replace("{{action}}", "deleted"),
-        description: t("bankAccounts.accountDeleted"),
+        title: t('bank.accountDeleted'),
+        description: t('bank.accountDeletedMessage'),
       });
     },
-    onError: (error: Error) => {
+    onError: (error) => {
       toast({
-        title: t("errors.title"),
-        description: error.message || t("bankAccounts.errors.deleteFailed"),
-        variant: "destructive",
+        title: t('common.error'),
+        description: error.message,
+        variant: 'destructive',
       });
     },
   });
@@ -263,7 +258,7 @@ export default function BankAccounts() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['/api/wallet'] }); // Update wallet balance
       queryClient.invalidateQueries({ queryKey: ['/api/transactions'] }); // Update transaction history
-      setIsWithdrawDialogOpen(false);
+      setIsFormOpen(false);
       setWithdrawAmount(null);
       
       // Reset the URL without the query parameters
@@ -325,11 +320,11 @@ export default function BankAccounts() {
   });
 
   const onSubmit = (values: BankAccountFormValues) => {
-    createAccountMutation.mutate(values);
-  };
-
-  const onEdit = (values: BankAccountFormValues & { id: number }) => {
-    updateAccountMutation.mutate(values);
+    if (selectedAccount) {
+      updateMutation.mutate({ ...values, id: selectedAccount.id });
+    } else {
+      createMutation.mutate(values);
+    }
   };
 
   // Function to open edit dialog and populate form
@@ -346,13 +341,13 @@ export default function BankAccounts() {
       swift: account.swift || "",
       isDefault: account.isDefault,
     });
-    setIsEditDialogOpen(true);
+    setIsFormOpen(true);
   };
 
   // Function to open delete confirmation dialog
   const handleDeleteClick = (account: any) => {
     setSelectedAccount(account);
-    setIsDeleteDialogOpen(true);
+    setIsFormOpen(true);
   };
 
   // Get status badge color and icon
@@ -396,11 +391,19 @@ export default function BankAccounts() {
   };
 
   // Filter accounts based on the active tab
-  const filteredAccounts = bankAccounts ? 
-    (activeTab === "all" ? bankAccounts : 
-     activeTab === "default" ? bankAccounts.filter((account: any) => account.isDefault) : 
-     bankAccounts.filter((account: any) => account.status === activeTab)
+  const filteredAccounts = accounts ? 
+    (activeTab === "all" ? accounts : 
+     activeTab === "default" ? accounts.filter((account: any) => account.isDefault) : 
+     accounts.filter((account: any) => account.status === activeTab)
     ) : [];
+
+  if (isLoading) {
+    return <div>{t('common.loading')}</div>;
+  }
+
+  if (error) {
+    return <div>{t('common.error')}: {error.message}</div>;
+  }
 
   return (
     <div className="container py-6 max-w-4xl">
@@ -422,225 +425,12 @@ export default function BankAccounts() {
             </p>
           </div>
         </div>
-        <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-          <DialogTrigger asChild>
-            <Button className="gap-1 rounded-full px-4">
-              <Plus className="h-4 w-4 mr-1" />
-              {t("bankAccounts.addAccount")}
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-[500px] p-0 overflow-hidden">
-            <div className="sticky top-0 z-10 bg-background/80 backdrop-blur-sm border-b">
-              <div className="flex justify-between items-center px-6 pt-4 pb-2">
-                <div className="flex items-center gap-2">
-                  <div className="bg-primary/10 p-2 rounded-full">
-                    <Landmark className="h-5 w-5 text-primary" />
-                  </div>
-                  <DialogTitle className="text-xl">{t("bankAccounts.addAccount")}</DialogTitle>
-                </div>
-                <DialogClose asChild>
-                  <Button variant="ghost" size="icon" className="h-8 w-8">
-                    <X className="h-4 w-4" />
-                  </Button>
-                </DialogClose>
-              </div>
-              <DialogDescription className="px-6 pb-4 text-sm">
-                {t("bankAccounts.addAccountDescription")}
-              </DialogDescription>
-            </div>
-            
-            <div className="px-6 py-4 max-h-[60vh] overflow-y-auto">
-              <Form {...addForm}>
-                <form onSubmit={addForm.handleSubmit(onSubmit)} className="space-y-4">
-                  <div className="bg-muted/50 p-4 rounded-lg mb-4">
-                    <h3 className="text-sm font-medium mb-2 flex items-center">
-                      <Building className="w-4 h-4 mr-2 text-primary" />
-                      {t("bankAccounts.bankDetails")}
-                    </h3>
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <FormField
-                        control={addForm.control}
-                        name="bankName"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>{t("bankAccounts.bankName")}</FormLabel>
-                            <Select 
-                              onValueChange={field.onChange} 
-                              defaultValue={field.value}
-                            >
-                              <FormControl>
-                                <SelectTrigger>
-                                  <SelectValue placeholder="Select a bank" />
-                                </SelectTrigger>
-                              </FormControl>
-                              <SelectContent>
-                                {moroccanBanks.map((bank) => (
-                                  <SelectItem key={bank} value={bank}>{bank}</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={addForm.control}
-                        name="accountType"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>{t("bankAccounts.accountType")}</FormLabel>
-                            <Select 
-                              onValueChange={field.onChange} 
-                              defaultValue={field.value}
-                            >
-                              <FormControl>
-                                <SelectTrigger>
-                                  <SelectValue placeholder={t("bankAccounts.selectAccountTypePlaceholder")} />
-                                </SelectTrigger>
-                              </FormControl>
-                              <SelectContent>
-                                <SelectItem value="checking">{t("bankAccounts.types.checking")}</SelectItem>
-                                <SelectItem value="savings">{t("bankAccounts.types.savings")}</SelectItem>
-                                <SelectItem value="business">{t("bankAccounts.types.business")}</SelectItem>
-                              </SelectContent>
-                            </Select>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="bg-muted/50 p-4 rounded-lg mb-4">
-                    <h3 className="text-sm font-medium mb-2 flex items-center">
-                      <User className="w-4 h-4 mr-2 text-primary" />
-                      {t("bankAccounts.accountDetails")}
-                    </h3>
-                    <div className="grid gap-4">
-                      <FormField
-                        control={addForm.control}
-                        name="accountHolderName"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>{t("bankAccounts.accountHolderName")}</FormLabel>
-                            <FormControl>
-                              <Input placeholder={t("bankAccounts.accountHolderNamePlaceholder")} {...field} />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <div className="grid gap-4">
-                        <FormField
-                          control={addForm.control}
-                          name="rib"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>{t("bankAccounts.rib")}</FormLabel>
-                              <FormControl>
-                                <Input placeholder={t("bankAccounts.ribPlaceholder")} {...field} />
-                              </FormControl>
-                              <FormDescription className="text-xs">
-                                {t("bankAccounts.ribDescription")}
-                              </FormDescription>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="bg-muted/50 p-4 rounded-lg mb-4">
-                    <h3 className="text-sm font-medium mb-2 flex items-center">
-                      <Shield className="w-4 h-4 mr-2 text-primary" />
-                      {t("bankAccounts.internationalDetails")}
-                    </h3>
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <FormField
-                        control={addForm.control}
-                        name="iban"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>{t("bankAccounts.iban")}</FormLabel>
-                            <FormControl>
-                              <Input placeholder={t("bankAccounts.ibanPlaceholder")} {...field} />
-                            </FormControl>
-                            <FormDescription className="text-xs">
-                              {t("bankAccounts.optional")}
-                            </FormDescription>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={addForm.control}
-                        name="swift"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>{t("bankAccounts.swift")}</FormLabel>
-                            <FormControl>
-                              <Input placeholder={t("bankAccounts.swiftPlaceholder")} {...field} />
-                            </FormControl>
-                            <FormDescription className="text-xs">
-                              {t("bankAccounts.optional")}
-                            </FormDescription>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-                  </div>
-
-                  <FormField
-                    control={addForm.control}
-                    name="isDefault"
-                    render={({ field }) => (
-                      <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4 shadow-sm">
-                        <div className="space-y-0.5">
-                          <FormLabel className="text-base">{t("bankAccounts.isDefault")}</FormLabel>
-                          <FormDescription>
-                            {t("bankAccounts.defaultDescription")}
-                          </FormDescription>
-                        </div>
-                        <FormControl>
-                          <Switch
-                            checked={field.value}
-                            onCheckedChange={field.onChange}
-                          />
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
-                </form>
-              </Form>
-            </div>
-            
-            <div className="flex flex-col sm:flex-row gap-2 p-6 border-t bg-background/80 backdrop-blur-sm">
-              <Button 
-                variant="outline"
-                className="flex-1"
-                onClick={() => setIsAddDialogOpen(false)}
-              >
-                {t("actions.cancel")}
-              </Button>
-              <Button 
-                onClick={addForm.handleSubmit(onSubmit)}
-                disabled={createAccountMutation.isPending}
-                className="flex-1"
-              >
-                {createAccountMutation.isPending ? (
-                  <div className="flex items-center">
-                    <div className="animate-spin w-4 h-4 border-2 border-primary border-t-transparent rounded-full mr-2" /> 
-                    {t("actions.saving")}
-                  </div>
-                ) : (
-                  t("actions.save")
-                )}
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
+        <Button onClick={() => {
+          setSelectedAccount(undefined);
+          setIsFormOpen(true);
+        }}>
+          {t("bankAccounts.addAccount")}
+        </Button>
       </div>
 
       {/* Tabs for filtering accounts */}
@@ -684,175 +474,16 @@ export default function BankAccounts() {
               <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" />
             </div>
           ) : filteredAccounts.length > 0 ? (
-            <div className="grid gap-6 md:grid-cols-2">
-              {filteredAccounts.map((account: any) => (
-                <Card key={account.id} className={`overflow-hidden ${account.isDefault ? 'ring-2 ring-primary' : ''}`}>
-                  <div className={`h-1.5 w-full ${account.isDefault ? 'bg-primary' : 'bg-muted'}`}></div>
-                  <CardHeader className="pb-3">
-                    <div className="flex justify-between items-start">
-                      <div className="flex items-center">
-                        <div className="mr-4 bg-primary/10 p-3 rounded-full">
-                          {bankIcons[account.bankName] || bankIcons.default}
-                        </div>
-                        <div>
-                          <CardTitle className="text-lg">{account.bankName}</CardTitle>
-                          <div className="flex items-center mt-1">
-                            <Badge 
-                              variant="outline" 
-                              className={`flex items-center ${getStatusInfo(account.status).className}`}
-                            >
-                              {getStatusInfo(account.status).icon}
-                              {t(`bankAccounts.status.${account.status}`)}
-                            </Badge>
-                            {account.isDefault && (
-                              <Badge variant="secondary" className="ml-2 flex items-center">
-                                <CheckCircle2 className="w-3 h-3 mr-1" />
-                                {t("bankAccounts.default")}
-                              </Badge>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex">
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button 
-                                variant="ghost" 
-                                size="icon"
-                                className="h-8 w-8"
-                                onClick={() => handleEditClick(account)}
-                              >
-                                <Pencil className="h-4 w-4" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              <p>{t("common.edit")}</p>
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                        
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button 
-                                variant="ghost" 
-                                size="icon"
-                                className="h-8 w-8 text-destructive"
-                                onClick={() => handleDeleteClick(account)}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              <p>{t("common.delete")}</p>
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-3">
-                      <div className="grid grid-cols-2 gap-6">
-                        <div>
-                          <div className="flex items-center justify-between">
-                            <p className="text-xs text-muted-foreground">{t("bankAccounts.accountType")}</p>
-                            <div className="flex items-center">
-                              <CreditCard className="h-3.5 w-3.5 text-muted-foreground" />
-                            </div>
-                          </div>
-                          <p className="text-sm font-medium capitalize mt-1">{t(`bankAccounts.types.${account.accountType}`)}</p>
-                        </div>
-                        <div>
-                          <div className="flex items-center justify-between">
-                            <p className="text-xs text-muted-foreground">{t("bankAccounts.accountHolderName")}</p>
-                            <div className="flex items-center">
-                              <User className="h-3.5 w-3.5 text-muted-foreground" />
-                            </div>
-                          </div>
-                          <p className="text-sm font-medium mt-1">{account.accountHolderName}</p>
-                        </div>
-                      </div>
-                      
-                      <Separator className="my-3" />
-                      
-                      <div className="space-y-2">
-                        <div>
-                          <div className="flex items-center justify-between">
-                            <p className="text-xs text-muted-foreground">{t("bankAccounts.rib")}</p>
-                            <TooltipProvider>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Button 
-                                    variant="ghost" 
-                                    size="icon" 
-                                    className="h-5 w-5"
-                                    onClick={() => copyToClipboard(account.rib, `account-${account.id}-rib`)}
-                                  >
-                                    {copiedField === `account-${account.id}-rib` ? (
-                                      <Check className="h-3 w-3 text-primary" />
-                                    ) : (
-                                      <Copy className="h-3 w-3 text-muted-foreground" />
-                                    )}
-                                  </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  <p>{copiedField === `account-${account.id}-rib` ? t("common.copied") : t("common.copy")}</p>
-                                </TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
-                          </div>
-                          <p className="text-sm font-mono tracking-tight mt-1 overflow-hidden text-ellipsis">
-                            {account.rib}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  </CardContent>
-                  <CardFooter className="pt-0">
-                    {!account.isDefault ? (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="w-full mt-2"
-                        onClick={() => setDefaultMutation.mutate(account.id)}
-                        disabled={setDefaultMutation.isPending}
-                      >
-                        {setDefaultMutation.isPending ? (
-                          <div className="flex items-center">
-                            <div className="animate-spin w-3 h-3 border-2 border-primary border-t-transparent rounded-full mr-2" /> 
-                            {t("actions.updating")}
-                          </div>
-                        ) : (
-                          <>
-                            <Check className="h-3.5 w-3.5 mr-1" /> 
-                            {t("bankAccounts.makeDefault")}
-                          </>
-                        )}
-                      </Button>
-                    ) : (
-                      <div className="w-full">
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          className="w-full mt-2"
-                          onClick={() => {
-                            toast({
-                              title: t("actions.topUp"),
-                              description: t("bankAccounts.topUpFromBankDescription"),
-                            });
-                          }}
-                        >
-                          <ArrowRight className="h-3.5 w-3.5 mr-1" /> 
-                          {t("actions.transferMoney")}
-                        </Button>
-                      </div>
-                    )}
-                  </CardFooter>
-                </Card>
-              ))}
-            </div>
+            <BankAccountList
+              accounts={filteredAccounts}
+              onSelect={(account) => {
+                setSelectedAccount(account);
+                setIsFormOpen(true);
+              }}
+              onDelete={(id) => {
+                handleDeleteClick(filteredAccounts.find((a) => a.id === id));
+              }}
+            />
           ) : (
             <div className="bg-gradient-to-b from-muted/30 to-muted/60 rounded-lg p-8 text-center my-8">
               <div className="flex justify-center mb-6">
@@ -863,11 +494,10 @@ export default function BankAccounts() {
               <h3 className="text-xl font-medium mb-2">{t("bankAccounts.noAccounts")}</h3>
               <p className="text-muted-foreground mb-6 max-w-md mx-auto">{t("bankAccounts.noAccountsDescription")}</p>
               <Button 
-                onClick={() => setIsAddDialogOpen(true)}
+                onClick={() => setIsFormOpen(true)}
                 size="lg"
                 className="rounded-full px-6"
               >
-                <Plus className="h-4 w-4 mr-2" />
                 {t("bankAccounts.addAccount")}
               </Button>
             </div>
@@ -875,394 +505,21 @@ export default function BankAccounts() {
         </TabsContent>
       </Tabs>
 
-      {/* Edit Account Dialog */}
-      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+      <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
         <DialogContent className="sm:max-w-[500px] p-0 overflow-hidden">
-          <div className="sticky top-0 z-10 bg-background/80 backdrop-blur-sm border-b">
-            <div className="flex justify-between items-center px-6 pt-4 pb-2">
-              <div className="flex items-center gap-2">
-                <div className="bg-primary/10 p-2 rounded-full">
-                  <Landmark className="h-5 w-5 text-primary" />
-                </div>
-                <DialogTitle className="text-xl">{t("bankAccounts.editAccount")}</DialogTitle>
-              </div>
-              <DialogClose asChild>
-                <Button variant="ghost" size="icon" className="h-8 w-8">
-                  <X className="h-4 w-4" />
-                </Button>
-              </DialogClose>
-            </div>
-            <DialogDescription className="px-6 pb-4 text-sm">
-              {t("bankAccounts.editAccountDescription")}
-            </DialogDescription>
-          </div>
-          
-          <div className="px-6 py-4 max-h-[60vh] overflow-y-auto">
-            <Form {...editForm}>
-              <form className="space-y-4">
-                <div className="bg-muted/50 p-4 rounded-lg mb-4">
-                  <h3 className="text-sm font-medium mb-2 flex items-center">
-                    <Building className="w-4 h-4 mr-2 text-primary" />
-                    {t("bankAccounts.bankDetails")}
-                  </h3>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <FormField
-                      control={editForm.control}
-                      name="bankName"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>{t("bankAccounts.bankName")}</FormLabel>
-                          <Select 
-                            onValueChange={field.onChange} 
-                            defaultValue={field.value}
-                          >
-                            <FormControl>
-                              <SelectTrigger>
-                                <SelectValue placeholder="Select a bank" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              {moroccanBanks.map((bank) => (
-                                <SelectItem key={bank} value={bank}>{bank}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={editForm.control}
-                      name="accountType"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>{t("bankAccounts.accountType")}</FormLabel>
-                          <Select 
-                            onValueChange={field.onChange} 
-                            defaultValue={field.value}
-                          >
-                            <FormControl>
-                              <SelectTrigger>
-                                <SelectValue placeholder={t("bankAccounts.selectAccountTypePlaceholder")} />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              <SelectItem value="checking">{t("bankAccounts.types.checking")}</SelectItem>
-                              <SelectItem value="savings">{t("bankAccounts.types.savings")}</SelectItem>
-                              <SelectItem value="business">{t("bankAccounts.types.business")}</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-                </div>
-
-                <div className="bg-muted/50 p-4 rounded-lg mb-4">
-                  <h3 className="text-sm font-medium mb-2 flex items-center">
-                    <User className="w-4 h-4 mr-2 text-primary" />
-                    {t("bankAccounts.accountDetails")}
-                  </h3>
-                  <div className="grid gap-4">
-                    <FormField
-                      control={editForm.control}
-                      name="accountHolderName"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>{t("bankAccounts.accountHolderName")}</FormLabel>
-                          <FormControl>
-                            <Input {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <div className="grid gap-4">
-                      <FormField
-                        control={editForm.control}
-                        name="rib"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>{t("bankAccounts.rib")}</FormLabel>
-                            <FormControl>
-                              <Input placeholder={t("bankAccounts.ribPlaceholder")} {...field} />
-                            </FormControl>
-                            <FormDescription className="text-xs">
-                              RIB (Relevé d'Identité Bancaire) - Moroccan bank identifier
-                            </FormDescription>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="bg-muted/50 p-4 rounded-lg mb-4">
-                  <h3 className="text-sm font-medium mb-2 flex items-center">
-                    <Shield className="w-4 h-4 mr-2 text-primary" />
-                    {t("bankAccounts.internationalDetails")}
-                  </h3>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <FormField
-                      control={editForm.control}
-                      name="iban"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>{t("bankAccounts.iban")}</FormLabel>
-                          <FormControl>
-                            <Input placeholder={t("bankAccounts.ibanPlaceholder")} {...field} />
-                          </FormControl>
-                          <FormDescription className="text-xs">
-                            {t("bankAccounts.optional")}
-                          </FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={editForm.control}
-                      name="swift"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>{t("bankAccounts.swift")}</FormLabel>
-                          <FormControl>
-                            <Input placeholder={t("bankAccounts.swiftPlaceholder")} {...field} />
-                          </FormControl>
-                          <FormDescription className="text-xs">
-                            {t("bankAccounts.optional")}
-                          </FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-                </div>
-
-                <FormField
-                  control={editForm.control}
-                  name="isDefault"
-                  render={({ field }) => (
-                    <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4 shadow-sm">
-                      <div className="space-y-0.5">
-                        <FormLabel className="text-base">{t("bankAccounts.isDefault")}</FormLabel>
-                        <FormDescription>
-                          {t("bankAccounts.defaultDescription")}
-                        </FormDescription>
-                      </div>
-                      <FormControl>
-                        <Switch
-                          checked={field.value}
-                          onCheckedChange={field.onChange}
-                        />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
-              </form>
-            </Form>
-          </div>
-          
-          <div className="flex flex-col sm:flex-row gap-2 p-6 border-t bg-background/80 backdrop-blur-sm">
-            <Button 
-              variant="outline"
-              className="flex-1"
-              onClick={() => setIsEditDialogOpen(false)}
-            >
-              {t("actions.cancel")}
-            </Button>
-            <Button 
-              onClick={editForm.handleSubmit(onEdit)}
-              disabled={updateAccountMutation.isPending}
-              className="flex-1"
-            >
-              {updateAccountMutation.isPending ? (
-                <div className="flex items-center">
-                  <div className="animate-spin w-4 h-4 border-2 border-primary border-t-transparent rounded-full mr-2" /> 
-                  {t("actions.updating")}
-                </div>
-              ) : (
-                t("actions.update")
-              )}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Delete Confirmation Dialog */}
-      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2">
-              <Trash2 className="h-5 w-5 text-destructive" />
-              {t("bankAccounts.deleteAccount")}
-            </AlertDialogTitle>
-            <AlertDialogDescription className="space-y-2">
-              <p>{t("bankAccounts.deleteConfirm")}</p>
-              <div className="rounded-lg bg-destructive/10 p-3 text-destructive text-sm mt-2 border border-destructive/20">
-                <AlertTriangle className="h-4 w-4 inline-block mr-2" />
-                {t("bankAccounts.deleteWarning")}
-              </div>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter className="gap-2 sm:space-x-0">
-            <AlertDialogCancel className="w-full mt-0">{t("actions.cancel")}</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => deleteAccountMutation.mutate(selectedAccount.id)}
-              className="w-full bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              disabled={deleteAccountMutation.isPending}
-            >
-              {deleteAccountMutation.isPending ? (
-                <div className="flex items-center justify-center">
-                  <div className="animate-spin w-4 h-4 border-2 border-current border-t-transparent rounded-full mr-2" /> 
-                  {t("actions.deleting")}
-                </div>
-              ) : (
-                <div className="flex items-center justify-center">
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  {t("actions.delete")}
-                </div>
-              )}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-      
-      {/* Withdraw to Bank Account Dialog */}
-      <Dialog open={isWithdrawDialogOpen} onOpenChange={setIsWithdrawDialogOpen}>
-        <DialogContent className="sm:max-w-[500px] p-0 overflow-hidden">
-          <div className="sticky top-0 z-10 bg-background/80 backdrop-blur-sm border-b">
-            <div className="flex justify-between items-center px-6 pt-4 pb-2">
-              <div className="flex items-center gap-2">
-                <div className="bg-primary/10 p-2 rounded-full">
-                  <Building2 className="h-5 w-5 text-primary" />
-                </div>
-                <DialogTitle className="text-xl">{t("bankAccounts.withdrawToBank")}</DialogTitle>
-              </div>
-              <DialogClose asChild>
-                <Button 
-                  variant="ghost" 
-                  size="icon" 
-                  className="h-8 w-8"
-                  onClick={() => {
-                    setWithdrawAmount(null);
-                    setLocation('/bank-accounts', { replace: true });
-                  }}
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              </DialogClose>
-            </div>
-            <DialogDescription className="px-6 pb-4 text-sm">
-              {t("bankAccounts.withdrawToBankDescription")}
-            </DialogDescription>
-          </div>
-          
-          <div className="px-6 py-4">
-            {/* Transaction Details */}
-            <div className="mb-6 bg-muted/30 p-4 rounded-lg border border-border">
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-sm font-medium">{t("payment.purpose")}</span>
-                <span className="text-sm font-medium">{t("payment.withdrawalFromWallet")}</span>
-              </div>
-              
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-sm font-medium">{t("payment.amount")}</span>
-                <span className="text-lg font-semibold text-primary">{withdrawAmount || 0} MAD</span>
-              </div>
-              
-              {/* Transaction Fee Display */}
-              <div className="border-t border-border my-2 pt-2">
-                <div className="flex justify-between items-center text-sm mb-1">
-                  <span className="flex items-center">
-                    {t("transaction.withdrawalFee")}
-                    <span className="ml-1 text-xs text-muted-foreground">
-                      ({withdrawAmount && withdrawAmount <= 500 ? '2.5%' : '3%'})
-                    </span>
-                  </span>
-                  <span>
-                    {withdrawAmount && withdrawAmount > 0 ? (
-                      `MAD ${(withdrawAmount && withdrawAmount <= 500 
-                        ? withdrawAmount * 0.025 
-                        : Math.min(withdrawAmount * 0.03, 15)).toFixed(2)}`
-                    ) : 'MAD 0.00'}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center font-medium text-sm">
-                  <span>{t("transaction.total")}</span>
-                  <span>
-                    MAD {withdrawAmount && withdrawAmount > 0 ? (
-                      (withdrawAmount + (withdrawAmount <= 500 ? withdrawAmount * 0.025 : Math.min(withdrawAmount * 0.03, 15))).toFixed(2)
-                    ) : '0.00'}
-                  </span>
-                </div>
-              </div>
-            </div>
-            
-            {/* Bank Account Selection */}
-            <div className="mb-4">
-              <h3 className="text-sm font-medium mb-3">{t("bankAccounts.selectBankAccount")}</h3>
-              <div className="space-y-3">
-                {selectedAccount && (
-                  <div className={`flex items-center p-4 rounded-lg border border-primary bg-primary/5`}>
-                    <div className="w-12 h-12 bg-muted rounded-full flex items-center justify-center mr-4">
-                      <Building2 className="h-6 w-6 text-primary" />
-                    </div>
-                    <div className="flex-1">
-                      <div className="font-medium">
-                        {selectedAccount.bankName}
-                      </div>
-                      <div className="text-xs text-muted-foreground mt-1">
-                        {t("bankAccounts.rib")}: {selectedAccount.rib?.substring(0, 10)}...
-                      </div>
-                    </div>
-                    <Badge variant="outline" className="ml-2">
-                      {t("bankAccounts.default")}
-                    </Badge>
-                  </div>
-                )}
-              </div>
-            </div>
-            
-            {/* Processing Time Warning */}
-            <div className="bg-yellow-50 dark:bg-yellow-950/50 border border-yellow-200 dark:border-yellow-800 rounded-md p-3 mb-6">
-              <div className="flex">
-                <AlertTriangle className="h-5 w-5 text-yellow-600 dark:text-yellow-500 mr-2 flex-shrink-0" />
-                <div className="text-sm text-yellow-700 dark:text-yellow-400">
-                  {t("bankAccounts.transferTimeWarning")}
-                </div>
-              </div>
-            </div>
-            
-            {/* Action Buttons */}
-            <div className="flex justify-end space-x-4 mt-4">
-              <Button 
-                variant="outline" 
-                onClick={() => {
-                  setIsWithdrawDialogOpen(false);
-                  setWithdrawAmount(null);
-                  setLocation('/bank-accounts', { replace: true });
-                }}
-              >
-                {t("common.cancel")}
-              </Button>
-              <Button 
-                onClick={handleWithdraw} 
-                disabled={withdrawMutation.isPending}
-                className="min-w-[120px]"
-              >
-                {withdrawMutation.isPending ? (
-                  <div className="flex items-center">
-                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                    {t("actions.processing")}
-                  </div>
-                ) : (
-                  t("bankAccounts.confirmWithdrawal")
-                )}
-              </Button>
-            </div>
-          </div>
+          <DialogHeader>
+            <DialogTitle>
+              {selectedAccount ? t('bank.editAccount') : t('bank.addAccount')}
+            </DialogTitle>
+          </DialogHeader>
+          <BankAccountForm
+            account={selectedAccount}
+            onSubmit={onSubmit}
+            onCancel={() => {
+              setIsFormOpen(false);
+              setSelectedAccount(undefined);
+            }}
+          />
         </DialogContent>
       </Dialog>
     </div>
