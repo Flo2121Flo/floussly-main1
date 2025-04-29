@@ -7,6 +7,7 @@ import Login from "@/pages/Login";
 import Register from "@/pages/Register";
 import Dashboard from "@/pages/Dashboard";
 import Home from "@/pages/Home";
+import { AMLDashboard } from './components/AMLDashboard';
 
 interface ProtectedRouteProps {
   component: React.ComponentType<any>;
@@ -64,6 +65,8 @@ function App() {
             )}
           />
         ))}
+        
+        <Route path="/aml/:userId" element={<AMLDashboard />} />
         
         <Route component={NotFound} />
       </Switch>

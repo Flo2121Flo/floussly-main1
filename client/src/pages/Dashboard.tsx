@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo, Suspense } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -9,10 +9,63 @@ import { Progress } from '@/components/ui/progress';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Bell, CreditCard, Wallet, ArrowUpRight, ArrowDownRight, Settings, User } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
+import { useFeature } from "../hooks/use-feature";
+import { Skeleton } from "@/components/ui/skeleton";
+
+function DashboardSkeleton() {
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <Skeleton className="h-8 w-48" />
+        <div className="flex items-center space-x-4">
+          <Skeleton className="h-10 w-10 rounded-full" />
+          <Skeleton className="h-10 w-10 rounded-full" />
+        </div>
+      </div>
+      <div className="grid grid-cols-4 gap-4">
+        {[...Array(4)].map((_, i) => (
+          <Card key={i}>
+            <CardHeader>
+              <Skeleton className="h-4 w-24" />
+            </CardHeader>
+            <CardContent>
+              <Skeleton className="h-10 w-full" />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function QuickActionCard({
+  icon,
+  title,
+  onClick,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  onClick: () => void;
+}) {
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <CardTitle className="text-sm font-medium">{title}</CardTitle>
+        {icon}
+      </CardHeader>
+      <CardContent>
+        <Button className="w-full" onClick={onClick}>
+          {title}
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
 
 export default function Dashboard() {
   const { t } = useTranslation();
-  const { user } = useAuth();
+  const { user, isLoading: isAuthLoading } = useAuth();
+  const { enabled: cryptoEnabled } = useFeature("crypto");
   const [activeTab, setActiveTab] = useState('overview');
 
   const recentTransactions = [
@@ -20,6 +73,36 @@ export default function Dashboard() {
     { id: 2, type: 'receive', amount: 1000, date: '2024-04-27', sender: 'Jane Smith' },
     { id: 3, type: 'send', amount: 200, date: '2024-04-26', recipient: 'Mike Johnson' },
   ];
+
+  const quickActions = useMemo(
+    () => [
+      {
+        icon: <ArrowUpRight className="h-4 w-4 text-muted-foreground" />,
+        title: t("dashboard.sendMoney"),
+        onClick: () => {/* Handle send money */},
+      },
+      {
+        icon: <ArrowDownRight className="h-4 w-4 text-muted-foreground" />,
+        title: t("dashboard.requestMoney"),
+        onClick: () => {/* Handle request money */},
+      },
+      {
+        icon: <CreditCard className="h-4 w-4 text-muted-foreground" />,
+        title: t("dashboard.payBills"),
+        onClick: () => {/* Handle pay bills */},
+      },
+      {
+        icon: <Wallet className="h-4 w-4 text-muted-foreground" />,
+        title: t("dashboard.topUp"),
+        onClick: () => {/* Handle top up */},
+      },
+    ],
+    [t]
+  );
+
+  if (isAuthLoading) {
+    return <DashboardSkeleton />;
+  }
 
   return (
     <div className="container mx-auto p-4 space-y-6">
@@ -34,7 +117,7 @@ export default function Dashboard() {
             <Bell className="h-4 w-4" />
           </Button>
           <Avatar>
-            <AvatarImage src={user?.avatar} />
+            <AvatarImage src={user?.avatar} alt={user?.name} />
             <AvatarFallback>{user?.name?.[0]}</AvatarFallback>
           </Avatar>
         </div>
@@ -42,42 +125,9 @@ export default function Dashboard() {
 
       {/* Quick Actions */}
       <div className="grid grid-cols-4 gap-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">{t('dashboard.sendMoney')}</CardTitle>
-            <ArrowUpRight className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <Button className="w-full">{t('dashboard.send')}</Button>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">{t('dashboard.requestMoney')}</CardTitle>
-            <ArrowDownRight className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <Button className="w-full">{t('dashboard.request')}</Button>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">{t('dashboard.payBills')}</CardTitle>
-            <CreditCard className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <Button className="w-full">{t('dashboard.pay')}</Button>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">{t('dashboard.topUp')}</CardTitle>
-            <Wallet className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <Button className="w-full">{t('dashboard.addMoney')}</Button>
-          </CardContent>
-        </Card>
+        {quickActions.map((action) => (
+          <QuickActionCard key={action.title} {...action} />
+        ))}
       </div>
 
       {/* Main Content */}
@@ -139,6 +189,32 @@ export default function Dashboard() {
               </div>
             </CardContent>
           </Card>
+
+          {cryptoEnabled && (
+            <div className="grid gap-6 md:grid-cols-2">
+              <Card>
+                <CardHeader>
+                  <CardTitle>{t("dashboard.cryptoPortfolio")}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <Suspense fallback={<Skeleton className="h-32" />}>
+                    <CryptoPortfolio />
+                  </Suspense>
+                </CardContent>
+              </Card>
+              
+              <Card>
+                <CardHeader>
+                  <CardTitle>{t("dashboard.cryptoMarket")}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <Suspense fallback={<Skeleton className="h-32" />}>
+                    <CryptoMarket />
+                  </Suspense>
+                </CardContent>
+              </Card>
+            </div>
+          )}
         </TabsContent>
 
         <TabsContent value="transactions">

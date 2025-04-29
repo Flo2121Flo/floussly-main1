@@ -263,7 +263,7 @@ export default {
       rateApp: "Évaluer Floussly"
     },
     logout: "Déconnexion",
-    version: "Floussly v1.0.0 • © 2023 Floussly Inc."
+    version: "Floussly v1.0.0 • © 2025 Floussly Inc."
   },
   
   // Financial Health

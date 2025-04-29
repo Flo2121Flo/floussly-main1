@@ -263,6 +263,6 @@ export default {
       rateApp: "ⵙⵓⴷⵙ Floussly"
     },
     logout: "ⴼⴼⵖ",
-    version: "Floussly v1.0.0 • © 2023 Floussly Inc."
+    version: "Floussly v1.0.0 • © 2025 Floussly Inc."
   }
 };

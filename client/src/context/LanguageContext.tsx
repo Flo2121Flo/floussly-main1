@@ -22,29 +22,29 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     if (savedLanguage && ["en", "fr", "ar", "ber"].includes(savedLanguage)) {
       setLanguageState(savedLanguage as Language);
       i18n.changeLanguage(savedLanguage);
-      document.documentElement.lang = savedLanguage;
-      
-      // Set RTL attribute for Arabic
-      if (savedLanguage === "ar") {
-        document.documentElement.dir = "rtl";
-      } else {
-        document.documentElement.dir = "ltr";
-      }
+      updateDocumentAttributes(savedLanguage as Language);
     }
   }, [i18n]);
+  
+  const updateDocumentAttributes = (lang: Language) => {
+    document.documentElement.lang = lang;
+    document.documentElement.dir = lang === "ar" ? "rtl" : "ltr";
+    
+    // Update body class for RTL support
+    if (lang === "ar") {
+      document.body.classList.add("rtl");
+      document.body.classList.remove("ltr");
+    } else {
+      document.body.classList.add("ltr");
+      document.body.classList.remove("rtl");
+    }
+  };
   
   const setLanguage = (lang: Language) => {
     setLanguageState(lang);
     i18n.changeLanguage(lang);
     localStorage.setItem("floussly-language", lang);
-    document.documentElement.lang = lang;
-    
-    // Set RTL attribute for Arabic
-    if (lang === "ar") {
-      document.documentElement.dir = "rtl";
-    } else {
-      document.documentElement.dir = "ltr";
-    }
+    updateDocumentAttributes(lang);
   };
   
   return (

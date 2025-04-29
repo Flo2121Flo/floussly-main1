@@ -47,7 +47,7 @@ export function useTontines() {
       totalMembers: 6,
       currentCycle: 6,
       status: "completed",
-      endDate: "10 Sep 2023"
+      endDate: "10 Sep 2025"
     }
   ]);
   

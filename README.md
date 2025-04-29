@@ -1,23 +1,107 @@
-# Floussly
+# Floussly - Modern Financial Platform
 
-A modern web application built with TypeScript, React, and Node.js.
+Floussly is a comprehensive financial platform that provides secure and efficient money management solutions.
 
-## Features
+## 🚀 Features
 
-- TypeScript for type safety
-- React for frontend
-- Node.js with Express for backend
-- Redis for caching and token storage
-- Jest for testing
-- ESLint and Prettier for code quality
+- Secure user authentication and authorization
+- Real-time transaction monitoring
+- AML (Anti-Money Laundering) compliance
+- Multi-currency support
+- Mobile-first responsive design
+- RTL (Right-to-Left) support for Arabic
+- Comprehensive security measures
+- Real-time notifications
+- Transaction history and analytics
 
-## Prerequisites
+## 🛠️ Tech Stack
 
-- Node.js (v14 or higher)
+### Frontend
+- React with TypeScript
+- Tailwind CSS for styling
+- Ant Design for UI components
+- React Query for data fetching
+- React Router for navigation
+- i18next for internationalization
+
+### Backend
+- Node.js with Express
+- TypeScript
+- PostgreSQL with Prisma ORM
+- Redis for caching and session management
+- JWT for authentication
+- Winston for logging
+
+### Security
+- Content Security Policy (CSP)
+- Rate limiting
+- Input validation and sanitization
+- CSRF protection
+- Secure session management
+- Password encryption
+- 2FA support
+
+## 📁 Project Structure
+
+```
+floussly/
+├── client/                 # Frontend application
+│   ├── src/
+│   │   ├── components/     # Reusable UI components
+│   │   ├── config/         # Configuration files
+│   │   ├── context/        # React context providers
+│   │   ├── hooks/          # Custom React hooks
+│   │   ├── lib/            # Utility functions
+│   │   ├── pages/          # Page components
+│   │   └── i18n/           # Internationalization files
+│   └── public/             # Static assets
+│
+├── server/                 # Backend application
+│   ├── controllers/        # Route controllers
+│   ├── middleware/         # Express middleware
+│   ├── models/             # Database models
+│   ├── routes/             # API routes
+│   ├── services/           # Business logic
+│   ├── utils/              # Utility functions
+│   └── validations/        # Input validation schemas
+│
+├── shared/                 # Shared types and utilities
+├── .github/               # GitHub workflows
+└── deployment/            # Deployment configurations
+```
+
+## 🔒 Security Features
+
+### Authentication & Authorization
+- JWT-based authentication
+- Role-based access control
+- Session management
+- Password policies
+- 2FA support
+
+### Data Protection
+- Input validation and sanitization
+- SQL injection prevention
+- XSS protection
+- CSRF protection
+- Secure storage
+
+### Monitoring & Compliance
+- AML monitoring
+- Transaction pattern detection
+- Suspicious activity alerts
+- Audit logging
+- Rate limiting
+
+## 🚀 Getting Started
+
+### Prerequisites
+- Node.js (v16 or higher)
+- PostgreSQL
+- Redis
 - npm or yarn
-- Redis server
 
-## Installation
+### Installation
 
 1. Clone the repository:
 ```bash
@@ -27,68 +111,65 @@ cd floussly
 
 2. Install dependencies:
 ```bash
+# Install root dependencies
 npm install
-# or
-yarn install
+
+# Install client dependencies
+cd client
+npm install
+
+# Install server dependencies
+cd ../server
+npm install
 ```
 
-3. Create a `.env` file in the root directory with the following variables:
-```
-PORT=3000
-REDIS_URL=redis://localhost:6379
-```
-
-## Development
-
-Start the development server:
+3. Set up environment variables:
 ```bash
+# Create .env files
+cp .env.example .env
+cp client/.env.example client/.env
+cp server/.env.example server/.env
+```
+
+4. Start the development servers:
+```bash
+# Start the backend server
+cd server
 npm run dev
-# or
-yarn dev
+
+# Start the frontend server
+cd ../client
+npm run dev
 ```
 
-## Testing
+## 📝 API Documentation
 
-Run tests:
+The API documentation is available at `/api/docs` when running the server in development mode.
+
+## 🧪 Testing
+
 ```bash
+# Run all tests
 npm test
-# or
-yarn test
+
+# Run client tests
+cd client
+npm test
+
+# Run server tests
+cd server
+npm test
 ```
 
-## Building for Production
+## 🚀 Deployment
 
-Build the application:
-```bash
-npm run build
-# or
-yarn build
-```
+See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed deployment instructions.
 
-Start the production server:
-```bash
-npm start
-# or
-yarn start
-```
+## 📄 License
 
-## Project Structure
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-```
-floussly/
-├── client/           # React frontend
-├── server/           # Node.js backend
-│   ├── redis/        # Redis service
-│   └── public/       # Static files
-├── tests/            # Test files
-├── .env              # Environment variables
-├── .gitignore        # Git ignore file
-├── jest.config.js    # Jest configuration
-├── package.json      # Project dependencies
-└── README.md         # Project documentation
-```
-
-## Contributing
+## 🤝 Contributing
 
 1. Fork the repository
 2. Create your feature branch (`git checkout -b feature/amazing-feature`)
@@ -96,6 +177,6 @@ floussly/
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
-## License
+## 📞 Support
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details. 
+For support, email support@floussly.com or join our Slack channel. 

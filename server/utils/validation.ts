@@ -1,6 +1,5 @@
-import { Request, Response, NextFunction } from 'express';
 import { body, param, query, validationResult } from 'express-validator';
-import { logger } from '../utils/logger';
+import { logger } from './logger';
 
 // Common validation chains
 export const validateTransaction = [

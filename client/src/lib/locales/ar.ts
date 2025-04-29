@@ -283,7 +283,7 @@ export default {
       rateApp: "تقييم فلوسلي"
     },
     logout: "تسجيل الخروج",
-    version: "فلوسلي v1.0.0 • © 2023 فلوسلي Inc."
+    version: "فلوسلي v1.0.0 • © 2025 فلوسلي Inc."
   },
   
   // Financial Health
