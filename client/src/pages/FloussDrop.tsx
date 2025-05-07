@@ -34,7 +34,7 @@ const ProximityIndicator = ({ distance }: { distance: number | null }) => {
   );
 };
 
-export default function TreasureHunt() {
+export default function FloussDrop() {
   const [_, setLocation] = useLocation();
   const { t } = useTranslation();
   const {
@@ -156,8 +156,8 @@ export default function TreasureHunt() {
             </Button>
           </div>
           
-          <h1 className="font-poppins font-bold text-3xl mb-2">{t("treasure.hunt")}</h1>
-          <p className="text-muted-foreground">{t("treasure.find_description")}</p>
+          <h1 className="font-poppins font-bold text-3xl mb-2">{t("floussdrop.title")}</h1>
+          <p className="text-muted-foreground">{t("floussdrop.description")}</p>
         </div>
       </div>
 

@@ -705,5 +705,14 @@ export default {
       title: "Bill Payment Complete!",
       description: "You've successfully paid your bill on time. No late fees for you!"
     }
-  }
+  },
+  
+  floussdrop: {
+    create: 'Create FloussDrop',
+    find: 'Find FloussDrop',
+    unlock: 'Unlock',
+    claim: 'Claim',
+    amount: 'Amount',
+    location: 'Location',
+  },
 };

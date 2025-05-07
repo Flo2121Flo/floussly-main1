@@ -8,6 +8,10 @@ import Register from "@/pages/Register";
 import Dashboard from "@/pages/Dashboard";
 import Home from "@/pages/Home";
 import { AMLDashboard } from './components/AMLDashboard';
+import FloussChat from './pages/FloussChat';
+import FloussDrop from './pages/FloussDrop';
+import { useTranslation } from 'react-i18next';
+import { Toaster } from './components/ui/toaster';
 
 interface ProtectedRouteProps {
   component: React.ComponentType<any>;
@@ -18,6 +22,7 @@ interface ProtectedRouteProps {
 function App() {
   const [location] = useLocation();
   const { isAuthenticated, isLoading } = useAuth();
+  const { t } = useTranslation();
   
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -68,8 +73,12 @@ function App() {
         
         <Route path="/aml/:userId" element={<AMLDashboard />} />
         
+        <Route path="/chat/:chatId?" component={FloussChat} />
+        <Route path="/treasure" component={FloussDrop} />
+        
         <Route component={NotFound} />
       </Switch>
+      <Toaster />
     </Layout>
   );
 }

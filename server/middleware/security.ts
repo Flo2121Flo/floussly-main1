@@ -1,33 +1,180 @@
 import { Request, Response, NextFunction } from "express";
 import rateLimit from "express-rate-limit";
 import helmet from "helmet";
-import { validationResult } from "express-validator";
-import { logger } from "../utils/logger";
-import { SECURITY_CONFIG } from "../../client/src/config/security";
+import cors from "cors";
+import { securityConfig } from "../config/security";
+import { logger, logSecurityEvent } from "../utils/logger";
+import { RateLimitError } from "../utils/error";
+import { Redis } from "ioredis";
+import sanitizeHtml from "sanitize-html";
+import { escape } from "html-escaper";
+import { KMS } from "aws-sdk";
+import { createHash, randomBytes } from "crypto";
+import { verify } from "jsonwebtoken";
+import { promisify } from "util";
+import { AWSError } from "aws-sdk";
 
-// Rate limiting middleware
+// Install required type definitions
+// npm install --save-dev @types/sanitize-html @types/html-escaper @types/jsonwebtoken
+
+// Type definitions
+interface CognitoUser {
+  sub: string;
+  email: string;
+  phoneNumber?: string;
+  groups?: string[];
+}
+
+interface RequestWithUser extends Request {
+  user?: CognitoUser;
+}
+
+const redis = new Redis(securityConfig.redis.url);
+const kms = new KMS({ region: securityConfig.aws.region });
+
+// Advanced rate limiting with Redis store and IP-based blocking
 export const rateLimiter = rateLimit({
-  windowMs: SECURITY_CONFIG.rateLimiting.windowMs,
-  max: SECURITY_CONFIG.rateLimiting.maxRequests,
-  message: "Too many requests from this IP, please try again later",
-  standardHeaders: true,
-  legacyHeaders: false,
+  store: {
+    incr: async (key) => {
+      const count = await redis.incr(key);
+      await redis.expire(key, Math.floor(securityConfig.rateLimit.windowMs / 1000));
+      
+      // Block IP if too many failed attempts
+      if (count > securityConfig.rateLimit.max * 2) {
+        const blockKey = `blocked:${key}`;
+        await redis.set(blockKey, "1", "EX", securityConfig.rateLimit.blockDuration);
+        logSecurityEvent("IP_BLOCKED", { 
+          ip: key,
+          count,
+          threshold: securityConfig.rateLimit.max * 2
+        });
+      }
+      
+      return count;
+    },
+    decrement: async (key) => {
+      const count = await redis.decr(key);
+      if (count <= 0) {
+        await redis.del(key);
+      }
+      return count;
+    },
+    resetKey: async (key) => {
+      await redis.del(key);
+      await redis.del(`blocked:${key}`);
+    },
+  },
+  windowMs: securityConfig.rateLimit.windowMs,
+  max: securityConfig.rateLimit.max,
+  message: securityConfig.rateLimit.message,
+  handler: (req: Request, res: Response) => {
+    const ip = req.ip;
+    const path = req.path;
+    const userAgent = req.get("user-agent");
+    const fingerprint = req.headers["x-device-fingerprint"];
+    const userId = (req as RequestWithUser).user?.sub;
+
+    logSecurityEvent("RATE_LIMIT_EXCEEDED", {
+      ip,
+      path,
+      userAgent,
+      fingerprint,
+      userId,
+      timestamp: new Date().toISOString()
+    });
+
+    throw new RateLimitError();
+  },
 });
 
-// Security headers middleware
-export const securityHeaders = helmet({
+// Enhanced CORS configuration with strict origin checking
+export const corsMiddleware = cors({
+  origin: async (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+    if (!origin) {
+      return callback(new Error("Origin not allowed"), false);
+    }
+
+    // Check if origin is allowed
+    const allowedOrigins = securityConfig.cors.allowedOrigins;
+
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      logSecurityEvent("CORS_BLOCKED", { 
+        origin,
+        timestamp: new Date().toISOString()
+      });
+      callback(new Error("Not allowed by CORS"), false);
+    }
+  },
+  methods: securityConfig.cors.allowedMethods,
+  allowedHeaders: securityConfig.cors.allowedHeaders,
+  exposedHeaders: securityConfig.cors.exposedHeaders,
+  credentials: securityConfig.cors.credentials,
+  maxAge: securityConfig.cors.maxAge,
+  preflightContinue: false,
+  optionsSuccessStatus: 204
+});
+
+// Origin signature verification middleware
+export const verifyOriginSignatureMiddleware = async (req: Request, res: Response, next: NextFunction) => {
+  const origin = req.get("origin");
+  const signature = req.headers["x-origin-signature"];
+
+  if (origin && signature) {
+    try {
+      const isValid = await verifyOriginSignature(origin, signature as string);
+      if (!isValid) {
+        logSecurityEvent("INVALID_ORIGIN_SIGNATURE", { 
+          origin,
+          timestamp: new Date().toISOString()
+        });
+        return res.status(403).json({ error: "Invalid origin signature" });
+      }
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      logSecurityEvent("ORIGIN_VERIFICATION_FAILED", { 
+        origin, 
+        error: errorMessage,
+        timestamp: new Date().toISOString()
+      });
+      return res.status(403).json({ error: "Origin verification failed" });
+    }
+  }
+
+  next();
+};
+
+// Enhanced Helmet configuration with strict CSP
+export const helmetConfig = helmet({
   contentSecurityPolicy: {
     directives: {
-      ...SECURITY_CONFIG.csp,
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "https:"],
+      connectSrc: ["'self'", "https://api.floussly.com"],
+      fontSrc: ["'self'", "https:", "data:"],
+      objectSrc: ["'none'"],
+      mediaSrc: ["'self'"],
+      frameSrc: ["'none'"],
+      baseUri: ["'self'"],
+      formAction: ["'self'"],
+      frameAncestors: ["'none'"],
+      upgradeInsecureRequests: [],
     },
   },
   crossOriginEmbedderPolicy: true,
   crossOriginOpenerPolicy: true,
   crossOriginResourcePolicy: { policy: "same-site" },
-  dnsPrefetchControl: { allow: false },
+  dnsPrefetchControl: true,
   frameguard: { action: "deny" },
   hidePoweredBy: true,
-  hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
+  hsts: {
+    maxAge: 31536000,
+    includeSubDomains: true,
+    preload: true,
+  },
   ieNoOpen: true,
   noSniff: true,
   originAgentCluster: true,
@@ -36,82 +183,264 @@ export const securityHeaders = helmet({
   xssFilter: true,
 });
 
-// Input validation middleware
-export const validateInput = (req: Request, res: Response, next: NextFunction) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    logger.warn("Validation failed", {
+// Enhanced API key validation with KMS
+export const validateApiKey = async (req: Request, res: Response, next: NextFunction) => {
+  const apiKey = req.headers["x-api-key"];
+  const requestId = req.headers["x-request-id"];
+
+  if (!apiKey || !requestId) {
+    logSecurityEvent("MISSING_API_KEY", {
       path: req.path,
-      errors: errors.array(),
       ip: req.ip,
+      requestId,
     });
-    return res.status(400).json({
-      error: "Validation failed",
-      details: errors.array(),
+    return res.status(401).json({ message: "API key and request ID are required" });
+  }
+
+  try {
+    // Verify API key signature using KMS
+    const isValid = await verifyApiKeySignature(apiKey as string, requestId as string);
+    if (!isValid) {
+      logSecurityEvent("INVALID_API_KEY", {
+        path: req.path,
+        ip: req.ip,
+        requestId,
+      });
+      return res.status(401).json({ message: "Invalid API key" });
+    }
+
+    // Check API key expiration
+    const keyData = await redis.get(`apikey:${apiKey}`);
+    if (!keyData) {
+      logSecurityEvent("EXPIRED_API_KEY", {
+        path: req.path,
+        ip: req.ip,
+        requestId,
+      });
+      return res.status(401).json({ message: "API key expired" });
+    }
+
+    next();
+  } catch (error) {
+    logSecurityEvent("API_KEY_VERIFICATION_FAILED", {
+      path: req.path,
+      ip: req.ip,
+      requestId,
+      error,
+    });
+    return res.status(500).json({ message: "API key verification failed" });
+  }
+};
+
+// Enhanced request sanitization with advanced XSS protection
+export const sanitizeRequest = (req: Request, res: Response, next: NextFunction) => {
+  // Generate request ID if not present
+  if (!req.headers["x-request-id"]) {
+    req.headers["x-request-id"] = randomBytes(16).toString("hex");
+  }
+
+  // Sanitize request body
+  if (req.body) {
+    Object.keys(req.body).forEach((key) => {
+      if (typeof req.body[key] === "string") {
+        // Remove any potential script tags and sanitize HTML
+        req.body[key] = sanitizeHtml(req.body[key], {
+          allowedTags: [],
+          allowedAttributes: {},
+          disallowedTagsMode: "recursiveEscape",
+        });
+        // Escape HTML entities
+        req.body[key] = escape(req.body[key]);
+        // Remove any potential SQL injection attempts
+        req.body[key] = req.body[key].replace(/[\0\x08\x09\x1a\n\r"'\\\%]/g, "");
+        // Remove any potential command injection attempts
+        req.body[key] = req.body[key].replace(/[;&|`$]/g, "");
+      }
     });
   }
+
+  // Sanitize query parameters
+  if (req.query) {
+    Object.keys(req.query).forEach((key) => {
+      if (typeof req.query[key] === "string") {
+        const value = req.query[key] as string;
+        req.query[key] = sanitizeHtml(value, {
+          allowedTags: [],
+          allowedAttributes: {},
+          disallowedTagsMode: "recursiveEscape",
+        });
+        req.query[key] = escape(req.query[key] as string);
+        req.query[key] = (req.query[key] as string)
+          .replace(/[\0\x08\x09\x1a\n\r"'\\\%]/g, "")
+          .replace(/[;&|`$]/g, "");
+      }
+    });
+  }
+
+  // Sanitize URL parameters
+  if (req.params) {
+    Object.keys(req.params).forEach((key) => {
+      if (typeof req.params[key] === "string") {
+        req.params[key] = sanitizeHtml(req.params[key], {
+          allowedTags: [],
+          allowedAttributes: {},
+          disallowedTagsMode: "recursiveEscape",
+        });
+        req.params[key] = escape(req.params[key]);
+        req.params[key] = req.params[key]
+          .replace(/[\0\x08\x09\x1a\n\r"'\\\%]/g, "")
+          .replace(/[;&|`$]/g, "");
+      }
+    });
+  }
+
   next();
 };
 
-// API key validation middleware
-export const validateApiKey = (req: Request, res: Response, next: NextFunction) => {
-  const apiKey = req.headers["x-api-key"] || req.query.apiKey;
-  
-  if (!apiKey) {
-    logger.warn("Missing API key", {
-      path: req.path,
-      ip: req.ip,
-    });
-    return res.status(401).json({ error: "API key required" });
-  }
+// Enhanced request validation with schema-based validation
+export const validateRequest = (schema: any) => {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { error } = await schema.validate(req.body, {
+        abortEarly: false,
+        stripUnknown: true,
+      });
+      
+      if (error) {
+        const errors = error.details.map((detail: any) => ({
+          field: detail.path.join("."),
+          message: detail.message,
+        }));
+        
+        logSecurityEvent("VALIDATION_FAILED", {
+          path: req.path,
+          errors,
+          requestId: req.headers["x-request-id"],
+        });
+        
+        return res.status(400).json({
+          status: "error",
+          code: "VALIDATION_FAILED",
+          errors,
+        });
+      }
+      
+      next();
+    } catch (err) {
+      next(err);
+    }
+  };
+};
 
-  if (apiKey !== process.env.API_KEY) {
-    logger.warn("Invalid API key", {
-      path: req.path,
-      ip: req.ip,
-    });
-    return res.status(401).json({ error: "Invalid API key" });
+// Enhanced security headers
+export const securityHeaders = (req: Request, res: Response, next: NextFunction) => {
+  // Set security headers
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("X-XSS-Protection", "1; mode=block");
+  res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload");
+  res.setHeader("Content-Security-Policy", "default-src 'self'");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("Permissions-Policy", "geolocation=(), microphone=(), camera=()");
+  res.setHeader("X-DNS-Prefetch-Control", "off");
+  res.setHeader("X-Download-Options", "noopen");
+  res.setHeader("X-Permitted-Cross-Domain-Policies", "none");
+  const requestId = req.headers["x-request-id"];
+  if (requestId) {
+    res.setHeader("X-Request-ID", requestId);
   }
 
   next();
 };
 
-// Error handling middleware
-export const errorHandler = (
-  err: Error,
-  req: Request,
-  res: Response,
-  next: NextFunction
-) => {
-  logger.error("Error occurred", {
-    error: err.message,
-    stack: err.stack,
-    path: req.path,
-    method: req.method,
-    ip: req.ip,
-  });
-
-  res.status(500).json({
-    error: "An unexpected error occurred",
-    message: process.env.NODE_ENV === "development" ? err.message : undefined,
-  });
-};
-
-// Request logging middleware
+// Enhanced request logging with security context
 export const requestLogger = (req: Request, res: Response, next: NextFunction) => {
   const start = Date.now();
-  
+  const requestId = req.headers["x-request-id"] as string | undefined;
+  const userId = (req as RequestWithUser).user?.sub;
+
   res.on("finish", () => {
     const duration = Date.now() - start;
-    logger.info("Request completed", {
+    logger.info({
+      requestId,
       method: req.method,
       path: req.path,
       status: res.statusCode,
       duration,
       ip: req.ip,
       userAgent: req.get("user-agent"),
+      userId,
+      deviceFingerprint: req.headers["x-device-fingerprint"],
+      securityContext: {
+        isAuthenticated: !!(req as RequestWithUser).user,
+        hasValidApiKey: !!req.headers["x-api-key"],
+        isSecureConnection: req.secure,
+      },
     });
   });
 
   next();
-}; 
+};
+
+// Enhanced error logging with security context
+export const errorLogger = (err: Error, req: Request, res: Response, next: NextFunction) => {
+  logger.error({
+    requestId: req.headers["x-request-id"],
+    error: err.message,
+    stack: err.stack,
+    method: req.method,
+    path: req.path,
+    ip: req.ip,
+    userAgent: req.get("user-agent"),
+    userId: (req as RequestWithUser).user?.sub,
+    deviceFingerprint: req.headers["x-device-fingerprint"],
+    securityContext: {
+      isAuthenticated: !!(req as RequestWithUser).user,
+      hasValidApiKey: !!req.headers["x-api-key"],
+      isSecureConnection: req.secure,
+    },
+  });
+
+  next(err);
+};
+
+// Helper functions
+async function verifyApiKeySignature(apiKey: string, requestId: string): Promise<boolean> {
+  try {
+    if (!securityConfig.aws.kms.keyId) {
+      throw new Error("KMS key ID is not configured");
+    }
+
+    const params = {
+      KeyId: securityConfig.aws.kms.keyId,
+      Message: Buffer.from(requestId),
+      Signature: Buffer.from(apiKey, "base64"),
+      SigningAlgorithm: "ECDSA_SHA_256",
+    };
+
+    await kms.verify(params).promise();
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
+async function verifyOriginSignature(origin: string, signature: string): Promise<boolean> {
+  try {
+    if (!securityConfig.aws.kms.keyId) {
+      throw new Error("KMS key ID is not configured");
+    }
+
+    const params = {
+      KeyId: securityConfig.aws.kms.keyId,
+      Message: Buffer.from(origin),
+      Signature: Buffer.from(signature, "base64"),
+      SigningAlgorithm: "ECDSA_SHA_256",
+    };
+
+    await kms.verify(params).promise();
+    return true;
+  } catch (error) {
+    return false;
+  }
+} 

@@ -1,217 +1,161 @@
 import dotenv from 'dotenv';
+import { z } from 'zod';
 
+// Load environment variables
 dotenv.config();
 
-interface SecurityConfig {
-  helmet: {
-    contentSecurityPolicy: boolean;
-    crossOriginEmbedderPolicy: boolean;
-    crossOriginOpenerPolicy: boolean;
-    crossOriginResourcePolicy: boolean;
-    dnsPrefetchControl: boolean;
-    frameguard: boolean;
-    hidePoweredBy: boolean;
-    hsts: boolean;
-    ieNoOpen: boolean;
-    noSniff: boolean;
-    originAgentCluster: boolean;
-    permittedCrossDomainPolicies: boolean;
-    referrerPolicy: boolean;
-    xssFilter: boolean;
-  };
-  cors: {
-    origin: string | string[];
-    methods: string[];
-    allowedHeaders: string[];
-    credentials: boolean;
-  };
-}
+// Configuration schema validation
+const configSchema = z.object({
+  // Server
+  NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+  PORT: z.string().transform(Number).default('3000'),
+  
+  // Database
+  DATABASE_URL: z.string(),
+  
+  // AWS
+  AWS_REGION: z.string(),
+  AWS_ACCESS_KEY_ID: z.string(),
+  AWS_SECRET_ACCESS_KEY: z.string(),
+  
+  // Cognito
+  COGNITO_USER_POOL_ID: z.string(),
+  COGNITO_CLIENT_ID: z.string(),
+  
+  // KMS
+  KMS_KEY_ID: z.string(),
+  
+  // S3
+  S3_BUCKET_NAME: z.string(),
+  
+  // Redis
+  REDIS_URL: z.string(),
+  
+  // JWT
+  JWT_SECRET: z.string(),
+  JWT_EXPIRES_IN: z.string().default('1d'),
+  
+  // Security
+  RATE_LIMIT_WINDOW_MS: z.string().transform(Number).default('900000'), // 15 minutes
+  RATE_LIMIT_MAX_REQUESTS: z.string().transform(Number).default('100'),
+  
+  // Fees
+  WITHDRAWAL_FEE_FLAT: z.string().transform(Number).default('5'),
+  WITHDRAWAL_FEE_PERCENTAGE: z.string().transform(Number).default('1'),
+  TONTINE_FEE_PER_USER: z.string().transform(Number).default('2'),
+  TONTINE_FEE_PERCENTAGE: z.string().transform(Number).default('0.5'),
+  
+  // Agent
+  AGENT_COMMISSION_RATE: z.string().transform(Number).default('5'),
+  AGENT_MIN_WITHDRAWAL: z.string().transform(Number).default('100'),
+  
+  // Messaging
+  MESSAGE_EXPIRY_DAYS: z.string().transform(Number).default('30'),
+  MAX_MESSAGE_SIZE: z.string().transform(Number).default('10485760'), // 10MB
+  
+  // Tontine
+  MAX_TONTINE_MEMBERS: z.string().transform(Number).default('50'),
+  MIN_TONTINE_CONTRIBUTION: z.string().transform(Number).default('100'),
+  
+  // Limits
+  MAX_WALLET_BALANCE: z.string().transform(Number).default('100000'),
+  MAX_TRANSACTION_AMOUNT: z.string().transform(Number).default('50000'),
+  DAILY_TRANSACTION_LIMIT: z.string().transform(Number).default('100000'),
+});
 
-interface Config {
-  port: number;
-  env: string;
+// Parse and validate configuration
+const config = configSchema.parse(process.env);
+
+// Export configuration
+export default {
+  // Server
+  env: config.NODE_ENV,
+  port: config.PORT,
+  isProduction: config.NODE_ENV === 'production',
+  
+  // Database
   database: {
-    host: string;
-    port: number;
-    user: string;
-    password: string;
-    database: string;
-    url: string;
-    poolSize: number;
-    ssl: boolean;
-  };
-  redis: {
-    host: string;
-    port: number;
-    password: string | null;
-  };
+    url: config.DATABASE_URL,
+  },
+  
+  // AWS
   aws: {
-    accessKeyId: string;
-    secretAccessKey: string;
-    region: string;
-    s3Bucket: string;
-  };
-  jwt: {
-    secret: string;
-    expiresIn: string;
-  };
-  email: {
-    host: string;
-    port: number;
-    secure: boolean;
-    auth: {
-      user: string;
-      pass: string;
-    };
-  };
-  rateLimit: {
-    window: number;
-    max: number;
-  };
-  security: SecurityConfig;
-  moroccanBank: {
-    apiKey: string;
-    baseUrl: string;
-    banks: {
-      attijariwafa: {
-        code: string;
-        name: string;
-        apiUrl: string;
-      };
-      bmce: {
-        code: string;
-        name: string;
-        apiUrl: string;
-      };
-      cih: {
-        code: string;
-        name: string;
-        apiUrl: string;
-      };
-      bam: {
-        code: string;
-        name: string;
-        apiUrl: string;
-      };
-    };
-  };
-  banking: {
-    m2t: {
-      apiKey: string;
-      secretKey: string;
-    };
-    cmi: {
-      apiKey: string;
-    };
-    bankAlMaghrib: {
-      apiKey: string;
-    };
-  };
-}
-
-const securityConfig: SecurityConfig = {
-  helmet: {
-    contentSecurityPolicy: true,
-    crossOriginEmbedderPolicy: true,
-    crossOriginOpenerPolicy: true,
-    crossOriginResourcePolicy: true,
-    dnsPrefetchControl: true,
-    frameguard: true,
-    hidePoweredBy: true,
-    hsts: true,
-    ieNoOpen: true,
-    noSniff: true,
-    originAgentCluster: true,
-    permittedCrossDomainPolicies: true,
-    referrerPolicy: true,
-    xssFilter: true
+    region: config.AWS_REGION,
+    credentials: {
+      accessKeyId: config.AWS_ACCESS_KEY_ID,
+      secretAccessKey: config.AWS_SECRET_ACCESS_KEY,
+    },
   },
-  cors: {
-    origin: process.env.CORS_ORIGIN || '*',
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-    credentials: true
-  }
-};
-
-export const config: Config = {
-  port: parseInt(process.env.PORT || '3000', 10),
-  env: process.env.NODE_ENV || 'development',
-  database: {
-    host: process.env.DB_HOST || 'localhost',
-    port: parseInt(process.env.DB_PORT || '5432', 10),
-    user: process.env.DB_USER || 'postgres',
-    password: process.env.DB_PASSWORD || 'postgres',
-    database: process.env.DB_NAME || 'floussly',
-    url: process.env.DATABASE_URL || `postgres://${process.env.DB_USER || 'postgres'}:${process.env.DB_PASSWORD || 'postgres'}@${process.env.DB_HOST || 'localhost'}:${process.env.DB_PORT || '5432'}/${process.env.DB_NAME || 'floussly'}`,
-    poolSize: parseInt(process.env.DB_POOL_SIZE || '20', 10),
-    ssl: process.env.DB_SSL === 'true'
+  
+  // Cognito
+  cognito: {
+    userPoolId: config.COGNITO_USER_POOL_ID,
+    clientId: config.COGNITO_CLIENT_ID,
   },
+  
+  // KMS
+  kms: {
+    keyId: config.KMS_KEY_ID,
+  },
+  
+  // S3
+  s3: {
+    bucketName: config.S3_BUCKET_NAME,
+  },
+  
+  // Redis
   redis: {
-    host: process.env.REDIS_HOST || 'localhost',
-    port: parseInt(process.env.REDIS_PORT || '6379', 10),
-    password: process.env.REDIS_PASSWORD || null,
+    url: config.REDIS_URL,
   },
-  aws: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
-    region: process.env.AWS_REGION || 'us-east-1',
-    s3Bucket: process.env.AWS_S3_BUCKET || 'floussly',
-  },
+  
+  // JWT
   jwt: {
-    secret: process.env.JWT_SECRET || 'your-secret-key',
-    expiresIn: process.env.JWT_EXPIRES_IN || '24h',
+    secret: config.JWT_SECRET,
+    expiresIn: config.JWT_EXPIRES_IN,
   },
-  email: {
-    host: process.env.EMAIL_HOST || 'smtp.gmail.com',
-    port: parseInt(process.env.EMAIL_PORT || '587', 10),
-    secure: process.env.EMAIL_SECURE === 'true',
-    auth: {
-      user: process.env.EMAIL_USER || '',
-      pass: process.env.EMAIL_PASS || '',
+  
+  // Security
+  security: {
+    rateLimit: {
+      windowMs: config.RATE_LIMIT_WINDOW_MS,
+      max: config.RATE_LIMIT_MAX_REQUESTS,
     },
   },
-  rateLimit: {
-    window: 15 * 60 * 1000, // 15 minutes
-    max: 100,
-  },
-  security: securityConfig,
-  moroccanBank: {
-    apiKey: process.env.MOROCCAN_BANK_API_KEY || '',
-    baseUrl: process.env.MOROCCAN_BANK_BASE_URL || 'https://api.moroccanbank.com',
-    banks: {
-      attijariwafa: {
-        code: 'ATW',
-        name: 'Attijariwafa Bank',
-        apiUrl: 'https://api.attijariwafa.com',
-      },
-      bmce: {
-        code: 'BMCE',
-        name: 'BMCE Bank',
-        apiUrl: 'https://api.bmcebank.ma',
-      },
-      cih: {
-        code: 'CIH',
-        name: 'CIH Bank',
-        apiUrl: 'https://api.cihbank.ma',
-      },
-      bam: {
-        code: 'BAM',
-        name: 'Bank Al-Maghrib',
-        apiUrl: 'https://api.bankal-maghrib.ma',
-      },
+  
+  // Fees
+  fees: {
+    withdrawal: {
+      flat: config.WITHDRAWAL_FEE_FLAT,
+      percentage: config.WITHDRAWAL_FEE_PERCENTAGE,
+    },
+    tontine: {
+      perUser: config.TONTINE_FEE_PER_USER,
+      percentage: config.TONTINE_FEE_PERCENTAGE,
     },
   },
-  banking: {
-    m2t: {
-      apiKey: process.env.M2T_API_KEY || 'your_m2t_api_key',
-      secretKey: process.env.M2T_SECRET_KEY || 'your_m2t_secret_key'
-    },
-    cmi: {
-      apiKey: process.env.CMI_API_KEY || 'your_cmi_api_key'
-    },
-    bankAlMaghrib: {
-      apiKey: process.env.BANK_AL_MAGHRIB_API_KEY || 'your_bam_api_key'
-    }
+  
+  // Agent
+  agent: {
+    commissionRate: config.AGENT_COMMISSION_RATE,
+    minWithdrawal: config.AGENT_MIN_WITHDRAWAL,
   },
-}; 
+  
+  // Messaging
+  messaging: {
+    expiryDays: config.MESSAGE_EXPIRY_DAYS,
+    maxSize: config.MAX_MESSAGE_SIZE,
+  },
+  
+  // Tontine
+  tontine: {
+    maxMembers: config.MAX_TONTINE_MEMBERS,
+    minContribution: config.MIN_TONTINE_CONTRIBUTION,
+  },
+  
+  // Limits
+  limits: {
+    maxWalletBalance: config.MAX_WALLET_BALANCE,
+    maxTransactionAmount: config.MAX_TRANSACTION_AMOUNT,
+    dailyTransactionLimit: config.DAILY_TRANSACTION_LIMIT,
+  },
+} as const; 

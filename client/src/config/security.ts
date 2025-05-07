@@ -1,89 +1,129 @@
 import { env } from "../lib/env";
+import { Request, Response, NextFunction } from 'express';
 
-export const SECURITY_CONFIG = {
+export const securityConfig = {
   // Content Security Policy
   csp: {
-    defaultSrc: ["'none'"],
-    scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
-    styleSrc: ["'self'", "'unsafe-inline'"],
-    imgSrc: ["'self'", 'data:', 'https:'],
-    fontSrc: ["'self'"],
-    connectSrc: ["'self'", process.env.API_URL || 'http://localhost:3000'],
-    frameAncestors: ["'none'"],
-    formAction: ["'self'"],
-    baseUri: ["'self'"],
-    objectSrc: ["'none'"],
-    mediaSrc: ["'self'"],
-    frameSrc: ["'none'"],
-    workerSrc: ["'self'"],
-    childSrc: ["'self'"],
+    'default-src': ["'self'"],
+    'script-src': [
+      "'self'",
+      "'unsafe-inline'",
+      "'unsafe-eval'",
+      'https://www.google-analytics.com',
+      'https://www.googletagmanager.com',
+    ],
+    'style-src': [
+      "'self'",
+      "'unsafe-inline'",
+      'https://fonts.googleapis.com',
+    ],
+    'img-src': [
+      "'self'",
+      'data:',
+      'https:',
+      'blob:',
+    ],
+    'font-src': [
+      "'self'",
+      'https://fonts.gstatic.com',
+    ],
+    'connect-src': [
+      "'self'",
+      'https://api.floussly.com',
+      'https://www.google-analytics.com',
+    ],
+    'frame-src': ["'none'"],
+    'object-src': ["'none'"],
+    'base-uri': ["'self'"],
+    'form-action': ["'self'"],
+    'frame-ancestors': ["'none'"],
+    'block-all-mixed-content': true,
+    'upgrade-insecure-requests': true,
   },
 
-  // CORS Configuration
-  cors: {
-    origin: process.env.NODE_ENV === 'production' 
-      ? ['https://floussly.com', 'https://www.floussly.com']
-      : ['http://localhost:3000', 'http://localhost:5173'],
-    maxAge: 86400, // 24 hours
+  // Feature Policy
+  featurePolicy: {
+    'accelerometer': ["'none'"],
+    'camera': ["'none'"],
+    'geolocation': ["'none'"],
+    'gyroscope': ["'none'"],
+    'magnetometer': ["'none'"],
+    'microphone': ["'none'"],
+    'payment': ["'none'"],
+    'usb': ["'none'"],
   },
 
-  // Rate Limiting
-  rateLimiting: {
-    windowMs: 60 * 1000, // 1 minute
-    maxRequests: 100,
+  // HTTP Headers
+  headers: {
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY',
+    'X-XSS-Protection': '1; mode=block',
+    'Referrer-Policy': 'strict-origin-when-cross-origin',
+    'Permissions-Policy': 'geolocation=(), microphone=(), camera=()',
+    'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
   },
 
-  // Session Security
-  session: {
-    secure: process.env.NODE_ENV === 'production',
-    httpOnly: true,
-    sameSite: 'strict',
-    maxAge: 24 * 60 * 60 * 1000, // 24 hours
-  },
-
-  // API Security
+  // API Configuration
   api: {
-    timeout: 30000, // 30 seconds
+    baseUrl: process.env.NEXT_PUBLIC_API_URL || 'https://api.floussly.com',
+    timeout: 30000,
     retryAttempts: 3,
-    retryDelay: 1000, // 1 second
+    retryDelay: 1000,
   },
 
-  // Password Policy
-  password: {
-    minLength: 8,
-    requireUppercase: true,
-    requireLowercase: true,
-    requireNumbers: true,
-    requireSpecialChars: true,
-    maxAge: 90, // days
+  // Authentication
+  auth: {
+    tokenKey: 'auth_token',
+    refreshTokenKey: 'refresh_token',
+    tokenExpiryKey: 'token_expiry',
+    tokenPrefix: 'Bearer',
+    refreshTokenEndpoint: '/auth/refresh',
+    loginEndpoint: '/auth/login',
+    logoutEndpoint: '/auth/logout',
   },
 
-  // 2FA Settings
-  twoFactor: {
-    required: true,
-    backupCodes: 5,
-    recoveryWindow: 7, // days
+  // Error Handling
+  errorHandling: {
+    maxRetries: 3,
+    retryDelay: 1000,
+    timeout: 30000,
   },
 
-  // Audit Logging
-  audit: {
+  // Logging
+  logging: {
+    enabled: process.env.NODE_ENV === 'development',
+    level: process.env.NODE_ENV === 'development' ? 'debug' : 'error',
+    maxLogSize: 5 * 1024 * 1024, // 5MB
+    maxLogFiles: 5,
+  },
+
+  // Performance Monitoring
+  performance: {
     enabled: true,
-    sensitiveFields: ['password', 'token', 'apiKey'],
-    retentionDays: 90,
+    sampleRate: 0.1, // 10% of users
+    metrics: ['FCP', 'LCP', 'CLS', 'FID', 'TTFB'],
   },
-} as const;
+
+  // Security Monitoring
+  monitoring: {
+    enabled: true,
+    errorReporting: true,
+    performanceMonitoring: true,
+    userBehaviorTracking: false,
+  },
+};
 
 // Security middleware
-export function applySecurityHeaders(req: any, res: any, next: any) {
+export function applySecurityHeaders(req: Request, res: Response, next: NextFunction) {
   // Apply CSP
-  const cspHeader = Object.entries(SECURITY_CONFIG.csp)
+  const cspHeader = Object.entries(securityConfig.csp)
     .map(([key, value]) => `${key} ${value.join(" ")}`)
     .join("; ");
 
   res.setHeader("Content-Security-Policy", cspHeader);
 
   // Apply security headers
-  Object.entries(SECURITY_CONFIG.headers).forEach(([key, value]) => {
+  Object.entries(securityConfig.headers).forEach(([key, value]) => {
     res.setHeader(key, value);
   });
 
@@ -107,7 +147,7 @@ export function validatePassword(password: string): boolean {
     requireLowercase,
     requireNumbers,
     requireSpecialChars,
-  } = SECURITY_CONFIG.password;
+  } = securityConfig.password;
 
   if (password.length < minLength) return false;
   if (requireUppercase && !/[A-Z]/.test(password)) return false;
@@ -125,11 +165,11 @@ export function logSecurityEvent(event: {
   ip?: string;
   details: Record<string, any>;
 }) {
-  if (!SECURITY_CONFIG.audit.enabled) return;
+  if (!securityConfig.audit.enabled) return;
 
   const sanitizedDetails = Object.entries(event.details).reduce(
     (acc, [key, value]) => {
-      if (SECURITY_CONFIG.audit.sensitiveFields.includes(key)) {
+      if (securityConfig.audit.sensitiveFields.includes(key)) {
         acc[key] = "[REDACTED]";
       } else {
         acc[key] = value;

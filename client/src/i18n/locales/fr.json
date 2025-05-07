@@ -47,5 +47,18 @@
     "fr": "Français",
     "ar": "Arabe",
     "ber": "Berbère"
+  },
+  "chat": {
+    "add_money_prompt": "Voulez-vous ajouter de l'argent à votre portefeuille ?",
+    "custom_amount": "Montant personnalisé",
+    "top_up_success": "Vous avez ajouté avec succès {{amount}} MAD à votre portefeuille."
+  },
+  "payment": {
+    "add_money": "Ajouter de l'argent",
+    "select_method": "Sélectionnez le mode de paiement",
+    "processing": "Traitement du paiement",
+    "card": "Carte de crédit/débit",
+    "success": "Paiement réussi",
+    "error": "Échec du paiement"
   }
 } 

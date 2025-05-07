@@ -1,42 +1,62 @@
 import { Request, Response, NextFunction } from 'express';
-import { AppError } from '../utils/AppError';
-import logger from '../utils/logger';
+import { logger } from '../utils/logger';
+import { ValidationError, AuthenticationError, AuthorizationError } from '../utils/error';
 
-export const errorHandler = (
-  err: Error,
-  req: Request,
-  res: Response,
-  next: NextFunction
-) => {
-  logger.error('Error:', err);
+// Error handler middleware
+export const errorHandler = (err: Error, req: Request, res: Response, next: NextFunction) => {
+  logger.error('Error:', {
+    error: err.message,
+    stack: err.stack,
+    path: req.path,
+    method: req.method,
+    ip: req.ip,
+    userId: req.user?.sub,
+  });
 
-  if (err instanceof AppError) {
-    return res.status(err.statusCode).json({
-      error: err.message
-    });
-  }
-
-  // Handle specific error types
-  if (err.name === 'ValidationError') {
+  if (err instanceof ValidationError) {
     return res.status(400).json({
-      error: 'Validation error',
-      details: err.message
+      status: 'error',
+      code: 'VALIDATION_ERROR',
+      message: err.message,
+      details: err.details,
     });
   }
 
-  if (err.name === 'UnauthorizedError') {
+  if (err instanceof AuthenticationError) {
     return res.status(401).json({
-      error: 'Unauthorized'
+      status: 'error',
+      code: 'AUTHENTICATION_ERROR',
+      message: err.message,
     });
   }
 
-  // Default error
-  return res.status(500).json({
-    error: 'Internal server error'
+  if (err instanceof AuthorizationError) {
+    return res.status(403).json({
+      status: 'error',
+      code: 'AUTHORIZATION_ERROR',
+      message: err.message,
+    });
+  }
+
+  // Default error response
+  res.status(500).json({
+    status: 'error',
+    code: 'INTERNAL_SERVER_ERROR',
+    message: 'An unexpected error occurred',
   });
 };
 
-export const catchAsync = (fn: Function) => {
+// Not found handler middleware
+export const notFoundHandler = (req: Request, res: Response) => {
+  res.status(404).json({
+    status: 'error',
+    code: 'NOT_FOUND',
+    message: `Route ${req.method} ${req.path} not found`,
+  });
+};
+
+// Async error handler wrapper
+export const catchAsync = (fn: (req: Request, res: Response, next: NextFunction) => Promise<void>) => {
   return (req: Request, res: Response, next: NextFunction) => {
     fn(req, res, next).catch(next);
   };

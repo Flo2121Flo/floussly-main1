@@ -1,84 +1,166 @@
-import express from 'express';
-import { authenticate, requireRole } from '../middleware/auth';
+import { Router } from 'express';
+import { authenticate, authorize, verifyPhoneNumber } from '../middleware/auth';
+import { validate } from '../middleware/validation';
+import { transactionSchemas } from '../middleware/validation';
 import { TransactionService } from '../services/transaction';
+import { logger } from '../utils/logger';
 
-const router = express.Router();
-const transactionService = TransactionService.getInstance();
+const router = Router();
+const transactionService = new TransactionService();
 
 // Create a new transaction
-router.post('/', authenticate, async (req, res) => {
-  try {
-    const { amount, currency, type, metadata } = req.body;
-    const transaction = await transactionService.createTransaction(
-      req.user.id,
-      amount,
-      currency,
-      type,
-      metadata
-    );
-    res.status(201).json(transaction);
-  } catch (error) {
-    res.status(400).json({ error: error.message });
-  }
-});
+router.post(
+  '/',
+  authenticate,
+  verifyPhoneNumber,
+  validate(transactionSchemas.create),
+  async (req, res, next) => {
+    try {
+      const { recipientId, amount, description, metadata } = req.body;
+      const transaction = await transactionService.createTransaction({
+        senderId: req.user!.sub,
+        recipientId,
+        amount,
+        description,
+        metadata,
+      });
 
-// Get a specific transaction
-router.get('/:id', authenticate, async (req, res) => {
-  try {
-    const transaction = await transactionService.getTransaction(req.params.id);
-    if (transaction.userId !== req.user.id && req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'Unauthorized' });
+      logger.info('Transaction created', {
+        transactionId: transaction.id,
+        senderId: req.user!.sub,
+        recipientId,
+        amount,
+      });
+
+      res.status(201).json(transaction);
+    } catch (error) {
+      next(error);
     }
-    res.json(transaction);
-  } catch (error) {
-    res.status(404).json({ error: error.message });
   }
-});
+);
 
-// Get user's transactions with pagination
-router.get('/', authenticate, async (req, res) => {
-  try {
-    const limit = parseInt(req.query.limit as string) || 10;
-    const offset = parseInt(req.query.offset as string) || 0;
-    const { transactions, total } = await transactionService.getUserTransactions(
-      req.user.id,
-      limit,
-      offset
-    );
-    res.json({ transactions, total });
-  } catch (error) {
-    res.status(400).json({ error: error.message });
-  }
-});
+// Get user's transactions
+router.get(
+  '/',
+  authenticate,
+  validate(transactionSchemas.list),
+  async (req, res, next) => {
+    try {
+      const { page = 1, limit = 10, type, status } = req.query;
+      const transactions = await transactionService.getUserTransactions(
+        req.user!.sub,
+        {
+          page: Number(page),
+          limit: Number(limit),
+          type: type as string,
+          status: status as string,
+        }
+      );
 
-// Update transaction status (admin only)
-router.patch('/:id/status', authenticate, requireRole('admin'), async (req, res) => {
-  try {
-    const { status } = req.body;
-    const transaction = await transactionService.updateTransactionStatus(
-      req.params.id,
-      status
-    );
-    res.json(transaction);
-  } catch (error) {
-    res.status(400).json({ error: error.message });
+      res.json(transactions);
+    } catch (error) {
+      next(error);
+    }
   }
-});
+);
 
-// Get transaction summary
-router.get('/summary', authenticate, async (req, res) => {
-  try {
-    const startDate = new Date(req.query.startDate as string);
-    const endDate = new Date(req.query.endDate as string);
-    const summary = await transactionService.getTransactionSummary(
-      req.user.id,
-      startDate,
-      endDate
-    );
-    res.json(summary);
-  } catch (error) {
-    res.status(400).json({ error: error.message });
+// Get transaction by ID
+router.get(
+  '/:id',
+  authenticate,
+  validate(transactionSchemas.get),
+  async (req, res, next) => {
+    try {
+      const transaction = await transactionService.getTransaction(req.params.id);
+
+      // Check if user is authorized to view this transaction
+      if (
+        transaction.senderId !== req.user!.sub &&
+        transaction.recipientId !== req.user!.sub
+      ) {
+        return res.status(403).json({
+          message: 'You are not authorized to view this transaction',
+        });
+      }
+
+      res.json(transaction);
+    } catch (error) {
+      next(error);
+    }
   }
-});
+);
+
+// Process withdrawal
+router.post(
+  '/withdraw',
+  authenticate,
+  verifyPhoneNumber,
+  validate(transactionSchemas.withdraw),
+  async (req, res, next) => {
+    try {
+      const { amount, bankAccountId, description } = req.body;
+      const transaction = await transactionService.processWithdrawal({
+        userId: req.user!.sub,
+        amount,
+        bankAccountId,
+        description,
+      });
+
+      logger.info('Withdrawal processed', {
+        transactionId: transaction.id,
+        userId: req.user!.sub,
+        amount,
+      });
+
+      res.status(201).json(transaction);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// Process deposit
+router.post(
+  '/deposit',
+  authenticate,
+  verifyPhoneNumber,
+  validate(transactionSchemas.deposit),
+  async (req, res, next) => {
+    try {
+      const { amount, bankAccountId, description } = req.body;
+      const transaction = await transactionService.processDeposit({
+        userId: req.user!.sub,
+        amount,
+        bankAccountId,
+        description,
+      });
+
+      logger.info('Deposit processed', {
+        transactionId: transaction.id,
+        userId: req.user!.sub,
+        amount,
+      });
+
+      res.status(201).json(transaction);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// Get transaction statistics (admin only)
+router.get(
+  '/stats',
+  authenticate,
+  authorize(['ADMIN']),
+  async (req, res, next) => {
+    try {
+      const stats = await transactionService.getTransactionStatistics();
+      res.json(stats);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
 
 export default router; 

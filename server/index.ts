@@ -1,76 +1,86 @@
 import express from 'express';
+import { createServer } from 'http';
 import cors from 'cors';
 import helmet from 'helmet';
-import morgan from 'morgan';
 import compression from 'compression';
-import cookieParser from 'cookie-parser';
-import { config } from './config';
-import logger from './utils/logger';
-import { errorHandler, notFoundHandler } from './utils/error-handler';
-import {
-  rateLimiter,
-  securityHeaders,
-  validateInput,
-  validateApiKey,
-  requestLogger,
-} from './middleware/security';
-import { SECURITY_CONFIG } from '../client/src/config/security';
+import { PrismaClient } from '@prisma/client';
+import { MessagingService } from './services/messaging';
+import { MoneyTransferService } from './services/moneyTransfer';
+import { TreasureHuntService } from './services/treasureHunt';
+import { TranslationService } from './services/translation';
+import { WebSocketService } from './services/websocket';
+import { logger } from './utils/logger';
 
-// Import routes
-import userRoutes from './routes/user';
-import healthRoutes from './routes/health';
-import amlRoutes from './routes/aml-routes';
-import transactionRoutes from './routes/transactions';
-import webhookRoutes from './routes/webhooks';
+// Initialize Prisma
+const prisma = new PrismaClient();
 
+// Create Express app
 const app = express();
+const httpServer = createServer(app);
 
 // Middleware
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(cookieParser());
-app.use(compression());
-app.use(morgan('combined', { stream: { write: message => logger.info(message.trim()) } }));
-
-// Security middleware
-app.use(securityHeaders);
-app.use(rateLimiter);
-app.use(validateInput);
-app.use(requestLogger);
-
-// Enable CORS with security options
 app.use(cors({
-  origin: SECURITY_CONFIG.cors.origin,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key'],
+  origin: process.env.CLIENT_URL,
   credentials: true,
-  maxAge: SECURITY_CONFIG.cors.maxAge,
 }));
+app.use(helmet());
+app.use(compression());
+app.use(express.json());
 
-// Parse JSON bodies
-app.use(express.json({ limit: '10kb' }));
+// Initialize services
+const messagingService = new MessagingService(httpServer);
+const moneyTransferService = new MoneyTransferService();
+const treasureHuntService = new TreasureHuntService();
+const translationService = TranslationService.getInstance();
 
-// API routes
-app.use('/api/users', userRoutes);
-app.use('/api/health', healthRoutes);
-app.use('/api/transactions', transactionRoutes);
-app.use('/api/webhooks', webhookRoutes);
-app.use('/api/aml', amlRoutes);
+// Initialize WebSocket service
+const websocketService = new WebSocketService(
+  httpServer,
+  messagingService,
+  moneyTransferService,
+  treasureHuntService
+);
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok' });
+});
 
 // Error handling middleware
-app.use(errorHandler);
-app.use(notFoundHandler);
+app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  logger.error('Unhandled error:', err);
+  res.status(500).json({ error: 'Internal server error' });
+});
 
 // Start server
-const PORT = config.port;
-app.listen(PORT, () => {
-  logger.info(`Server is running on port ${PORT} in ${config.env} mode`);
-  logger.info('Security features enabled:', {
-    rateLimiting: true,
-    securityHeaders: true,
-    inputValidation: true,
-    apiKeyValidation: true,
-    corsProtection: true,
-    errorHandling: true,
-  });
+const PORT = process.env.PORT || 3000;
+httpServer.listen(PORT, async () => {
+  try {
+    // Initialize translation service
+    await translationService.initialize();
+
+    logger.info(`Server running on port ${PORT}`);
+  } catch (error) {
+    logger.error('Failed to start server:', error);
+    process.exit(1);
+  }
+});
+
+// Handle graceful shutdown
+process.on('SIGTERM', async () => {
+  logger.info('SIGTERM received. Shutting down gracefully...');
+  
+  try {
+    // Close Prisma connection
+    await prisma.$disconnect();
+    
+    // Close HTTP server
+    httpServer.close(() => {
+      logger.info('HTTP server closed');
+      process.exit(0);
+    });
+  } catch (error) {
+    logger.error('Error during shutdown:', error);
+    process.exit(1);
+  }
 });

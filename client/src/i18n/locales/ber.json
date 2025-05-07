@@ -71,5 +71,18 @@
     "fr": "ⵜⴰⴼⵔⴰⵏⵙⵉⵙⵜ",
     "ar": "ⵜⴰⵄⵔⴰⴱⵉⵜ",
     "ber": "ⵜⴰⵎⴰⵣⵉⵖⵜ"
+  },
+  "chat": {
+    "add_money_prompt": "Is tebɣiḍ ad rnu aɣṛas ɣer lḥesab-ik?",
+    "custom_amount": "Amḍan ameɣnas",
+    "top_up_success": "Rnuḍ {{amount}} dirham ɣer lḥesab-ik."
+  },
+  "payment": {
+    "add_money": "Rnu aɣṛas",
+    "select_method": "Fren anagraw n ufella",
+    "processing": "Aɣṛas ittusefrak",
+    "card": "Takart n uɣṛas",
+    "success": "Ufella yemmed",
+    "error": "Ufella ur yemmed ara"
   }
 } 
