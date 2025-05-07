@@ -47,5 +47,73 @@
     "fr": "French",
     "ar": "Arabic",
     "ber": "Berber"
+  },
+  "chat": {
+    "title": "Chat",
+    "conversations": "Conversations",
+    "add_money_prompt": "Do you want to add money to your wallet?",
+    "custom_amount": "Custom Amount",
+    "top_up_success": "You've successfully added {{amount}} MAD to your wallet.",
+    "type_message": "Type a message...",
+    "voice_message": "Voice message",
+    "treasure_message": "Treasure message",
+    "online": "Online",
+    "not_friends_warning": "You need to be friends to send money"
+  },
+  "payment": {
+    "add_money": "Add Money",
+    "select_method": "Select payment method",
+    "processing": "Processing payment",
+    "card": "Credit/Debit Card",
+    "success": "Payment successful",
+    "error": "Payment failed"
+  },
+  "floussdrop": {
+    "title": "FloussDrop",
+    "create_title": "Create FloussDrop",
+    "unlock_title": "Unlock FloussDrop",
+    "amount": "{{amount}} MAD",
+    "status": {
+      "locked": "Locked",
+      "unlocking": "Unlocking...",
+      "unlocked": "Unlocked!",
+      "expired": "Expired"
+    },
+    "distance": {
+      "cold": "Cold",
+      "warm": "Warm",
+      "hot": "Hot!"
+    },
+    "try_unlock": "Try to Unlock",
+    "scan_qr": "Scan QR Code",
+    "scanning": "Scanning...",
+    "enter_code": "Enter unlock code",
+    "unlock": "Unlock",
+    "congratulations": "Congratulations!",
+    "claim_success": "You've claimed {{amount}} MAD from {{sender}}",
+    "expiry": {
+      "title": "Expiry Date",
+      "select": "Select expiry date",
+      "custom": "Custom duration",
+      "options": {
+        "1h": "1 hour",
+        "6h": "6 hours",
+        "12h": "12 hours",
+        "24h": "24 hours",
+        "48h": "48 hours",
+        "72h": "72 hours",
+        "7d": "7 days",
+        "custom": "Custom"
+      },
+      "remaining": "Expires in {{time}}",
+      "expired": "Expired",
+      "expired_message": "This FloussDrop has expired and can no longer be claimed"
+    },
+    "error": {
+      "no_geolocation": "Geolocation is not supported",
+      "location_failed": "Failed to get location",
+      "qr_failed": "Failed to scan QR code",
+      "expired": "This FloussDrop has expired"
+    }
   }
 } 
