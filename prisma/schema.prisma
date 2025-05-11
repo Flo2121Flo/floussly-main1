@@ -148,4 +148,79 @@ model Session {
   @@index([userId])
   @@index([expiresAt])
   @@index([lastActive])
+}
+
+model User {
+  id                String    @id @default(auto()) @map("_id") @db.ObjectId
+  email             String    @unique
+  phone             String    @unique
+  password          String
+  firstName         String?
+  lastName          String?
+  avatar            String?
+  role              String    @default("user")
+  status            String    @default("active")
+  emailVerified     Boolean   @default(false)
+  phoneVerified     Boolean   @default(false)
+  twoFactorEnabled  Boolean   @default(false)
+  twoFactorSecret   String?
+  lastLogin         DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  // Relations
+  wallet            Wallet?
+  devices           Device[]
+  locations         Location[]
+  behaviors         Behavior[]
+  sessions          Session[]
+  riskScore         UserRiskScore?
+  sentTransactions  Transaction[]  @relation("SentTransactions")
+  receivedTransactions Transaction[] @relation("ReceivedTransactions")
+  sentPaymentRequests PaymentRequest[] @relation("SentPaymentRequests")
+  receivedPaymentRequests PaymentRequest[] @relation("ReceivedPaymentRequests")
+  amlActivities     AMLActivity[]
+
+  @@index([email])
+  @@index([phone])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model Wallet {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String   @unique @db.ObjectId
+  user      User     @relation(fields: [userId], references: [id])
+  balance   Float    @default(0)
+  currency  String   @default("USD")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model Transaction {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  senderId    String   @db.ObjectId
+  receiverId  String   @db.ObjectId
+  amount      Float
+  currency    String
+  type        String   // transfer, payment, withdrawal, deposit
+  status      String   // pending, completed, failed, reversed
+  description String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  completedAt DateTime?
+
+  // Relations
+  sender      User     @relation("SentTransactions", fields: [senderId], references: [id])
+  receiver    User     @relation("ReceivedTransactions", fields: [receiverId], references: [id])
+  paymentRequest PaymentRequest?
+
+  @@index([senderId])
+  @@index([receiverId])
+  @@index([type])
+  @@index([status])
+  @@index([createdAt])
 } 

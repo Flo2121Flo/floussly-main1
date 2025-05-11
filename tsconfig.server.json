@@ -1,0 +1,37 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "CommonJS",
+    "outDir": "dist/server",
+    "noEmit": false,
+    "jsx": "react",
+    "moduleResolution": "node",
+    "target": "ES2020",
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "strict": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "sourceMap": true,
+    "declaration": true,
+    "declarationMap": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "resolveJsonModule": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["server/*"],
+      "@config/*": ["server/config/*"],
+      "@controllers/*": ["server/controllers/*"],
+      "@middleware/*": ["server/middleware/*"],
+      "@models/*": ["server/models/*"],
+      "@routes/*": ["server/routes/*"],
+      "@services/*": ["server/services/*"],
+      "@utils/*": ["server/utils/*"],
+      "@lib/*": ["server/lib/*"],
+      "@types/*": ["server/types/*"]
+    }
+  },
+  "include": ["server/**/*"],
+  "exclude": ["node_modules", "dist", "build", "coverage", "client"]
+} 
