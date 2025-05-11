@@ -12,6 +12,7 @@ import FloussChat from './pages/FloussChat';
 import FloussDrop from './pages/FloussDrop';
 import { useTranslation } from 'react-i18next';
 import { Toaster } from './components/ui/toaster';
+import { PaymentRequests } from './pages/PaymentRequests';
 
 interface ProtectedRouteProps {
   component: React.ComponentType<any>;
@@ -75,6 +76,15 @@ function App() {
         
         <Route path="/chat/:chatId?" component={FloussChat} />
         <Route path="/treasure" component={FloussDrop} />
+        
+        <Route
+          path="/payment-requests"
+          element={
+            <ProtectedRoute>
+              <PaymentRequests />
+            </ProtectedRoute>
+          }
+        />
         
         <Route component={NotFound} />
       </Switch>

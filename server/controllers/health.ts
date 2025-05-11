@@ -1,105 +1,163 @@
 import { Request, Response } from 'express';
-import { DatabaseService } from '../database/db';
-import { RedisService } from '../redis/redis';
-import { logError, logInfo } from '../utils/logger';
+import { CloudWatch } from 'aws-sdk';
+import { config } from '../config';
+import logger from '../services/logging';
+import { redis } from '../redis/redis';
+import { db } from '../database/db';
 
-export class HealthController {
-  private db: DatabaseService;
-  private redis: RedisService;
+const cloudWatch = new CloudWatch({
+  region: config.aws.region,
+  credentials: {
+    accessKeyId: config.aws.accessKeyId,
+    secretAccessKey: config.aws.secretAccessKey,
+  },
+});
 
-  constructor() {
-    this.db = DatabaseService.getInstance();
-    this.redis = RedisService.getInstance();
+// Basic health check
+export const basicHealthCheck = async (req: Request, res: Response) => {
+  try {
+    res.status(200).json({
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      environment: config.environment,
+    });
+  } catch (error) {
+    logger.error('Basic health check failed', { error });
+    res.status(500).json({
+      status: 'unhealthy',
+      error: 'Health check failed',
+    });
+  }
+};
+
+// Detailed health check
+export const detailedHealthCheck = async (req: Request, res: Response) => {
+  const health = {
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    environment: config.environment,
+    services: {
+      database: 'healthy',
+      redis: 'healthy',
+      aws: 'healthy',
+    },
+    metrics: {
+      memory: process.memoryUsage(),
+      uptime: process.uptime(),
+    },
+  };
+
+  try {
+    // Check database connection
+    await db.raw('SELECT 1');
+  } catch (error) {
+    health.services.database = 'unhealthy';
+    health.status = 'unhealthy';
+    logger.error('Database health check failed', { error });
   }
 
-  async checkHealth(req: Request, res: Response): Promise<void> {
-    try {
-      // Check database connection
-      await this.db.query('SELECT 1');
-      
-      // Check Redis connection
-      await this.redis.ping();
-      
-      const healthStatus = {
-        status: 'healthy',
-        timestamp: new Date().toISOString(),
-        services: {
-          database: 'connected',
-          redis: 'connected'
-        }
-      };
+  try {
+    // Check Redis connection
+    await redis.ping();
+  } catch (error) {
+    health.services.redis = 'unhealthy';
+    health.status = 'unhealthy';
+    logger.error('Redis health check failed', { error });
+  }
 
-      logInfo('Health check passed', healthStatus);
-      res.json(healthStatus);
-    } catch (error) {
-      const errorStatus = {
-        status: 'unhealthy',
-        timestamp: new Date().toISOString(),
-        error: error instanceof Error ? error.message : 'Unknown error'
-      };
+  try {
+    // Check AWS services
+    await cloudWatch.describeAlarms().promise();
+  } catch (error) {
+    health.services.aws = 'unhealthy';
+    health.status = 'unhealthy';
+    logger.error('AWS health check failed', { error });
+  }
 
-      if (error instanceof Error) {
-        logError(error, 'Health check failed');
-      } else {
-        logError(new Error('Health check failed'), JSON.stringify(errorStatus));
-      }
-      res.status(500).json(errorStatus);
+  res.status(health.status === 'healthy' ? 200 : 503).json(health);
+};
+
+// Metrics endpoint
+export const metrics = async (req: Request, res: Response) => {
+  try {
+    const metrics = {
+      timestamp: new Date().toISOString(),
+      system: {
+        memory: process.memoryUsage(),
+        cpu: process.cpuUsage(),
+        uptime: process.uptime(),
+      },
+      database: {
+        connections: await db.raw('SELECT count(*) FROM pg_stat_activity'),
+      },
+      redis: {
+        memory: await redis.info('memory'),
+        clients: await redis.info('clients'),
+      },
+    };
+
+    // Send metrics to CloudWatch
+    await cloudWatch.putMetricData({
+      Namespace: 'Floussly/Health',
+      MetricData: [
+        {
+          MetricName: 'MemoryUsage',
+          Value: metrics.system.memory.heapUsed,
+          Unit: 'Bytes',
+          Timestamp: new Date(),
+        },
+        {
+          MetricName: 'DatabaseConnections',
+          Value: metrics.database.connections.rows[0].count,
+          Unit: 'Count',
+          Timestamp: new Date(),
+        },
+      ],
+    }).promise();
+
+    res.status(200).json(metrics);
+  } catch (error) {
+    logger.error('Metrics collection failed', { error });
+    res.status(500).json({
+      error: 'Failed to collect metrics',
+    });
+  }
+};
+
+// Readiness probe
+export const readiness = async (req: Request, res: Response) => {
+  try {
+    // Check if the application is ready to handle traffic
+    const isReady = await Promise.all([
+      db.raw('SELECT 1'),
+      redis.ping(),
+    ]).then(() => true)
+      .catch(() => false);
+
+    if (isReady) {
+      res.status(200).json({ status: 'ready' });
+    } else {
+      res.status(503).json({ status: 'not ready' });
     }
+  } catch (error) {
+    logger.error('Readiness check failed', { error });
+    res.status(503).json({ status: 'not ready' });
   }
+};
 
-  async checkDatabase(req: Request, res: Response): Promise<void> {
-    try {
-      await this.db.query('SELECT 1');
-      const status = {
-        status: 'healthy',
-        service: 'database',
-        timestamp: new Date().toISOString()
-      };
+// Liveness probe
+export const liveness = async (req: Request, res: Response) => {
+  try {
+    // Check if the application is alive and functioning
+    const isAlive = process.memoryUsage().heapUsed < 1024 * 1024 * 1024; // 1GB limit
 
-      logInfo('Database health check passed', status);
-      res.json(status);
-    } catch (error) {
-      const errorStatus = {
-        status: 'unhealthy',
-        service: 'database',
-        timestamp: new Date().toISOString(),
-        error: error instanceof Error ? error.message : 'Unknown error'
-      };
-
-      if (error instanceof Error) {
-        logError(error, 'Database health check failed');
-      } else {
-        logError(new Error('Database health check failed'), JSON.stringify(errorStatus));
-      }
-      res.status(500).json(errorStatus);
+    if (isAlive) {
+      res.status(200).json({ status: 'alive' });
+    } else {
+      res.status(503).json({ status: 'not alive' });
     }
+  } catch (error) {
+    logger.error('Liveness check failed', { error });
+    res.status(503).json({ status: 'not alive' });
   }
-
-  async checkRedis(req: Request, res: Response): Promise<void> {
-    try {
-      await this.redis.ping();
-      const status = {
-        status: 'healthy',
-        service: 'redis',
-        timestamp: new Date().toISOString()
-      };
-
-      logInfo('Redis health check passed', status);
-      res.json(status);
-    } catch (error) {
-      const errorStatus = {
-        status: 'unhealthy',
-        service: 'redis',
-        timestamp: new Date().toISOString(),
-        error: error instanceof Error ? error.message : 'Unknown error'
-      };
-
-      if (error instanceof Error) {
-        logError(error, 'Redis health check failed');
-      } else {
-        logError(new Error('Redis health check failed'), JSON.stringify(errorStatus));
-      }
-      res.status(500).json(errorStatus);
-    }
-  }
-} 
+}; 

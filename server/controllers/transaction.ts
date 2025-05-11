@@ -3,6 +3,11 @@ import { TransactionService } from '../services/transaction';
 import { validateRequest } from '../middleware/validate';
 import { transactionSchema } from '../validations/transaction';
 import { logger } from '../utils/logger';
+import { Transaction } from '../models/transaction';
+import { User } from '../models/user';
+import fraudDetection from '../services/fraud-detection';
+import { rateLimit } from '../middleware/rate-limiter';
+import { config } from '../config';
 
 export class TransactionController {
   private transactionService: TransactionService;
@@ -61,21 +66,122 @@ export class TransactionController {
   // Create a new transaction
   async createTransaction(req: Request, res: Response) {
     try {
+      const { amount, recipientId, description } = req.body;
       const userId = req.user?.id;
+
       if (!userId) {
-        return res.status(401).json({ error: 'Unauthorized' });
+        return res.status(401).json({
+          error: 'Unauthorized',
+          code: 'UNAUTHORIZED',
+        });
       }
 
-      const { error } = validateRequest(req.body, transactionSchema.create);
-      if (error) {
-        return res.status(400).json({ error: error.details[0].message });
-      }
+      // Apply rate limiting
+      await rateLimit.transaction(req, res, async () => {
+        // Get user and recipient
+        const [user, recipient] = await Promise.all([
+          User.findById(userId),
+          User.findById(recipientId),
+        ]);
 
-      const transaction = await this.transactionService.createTransaction(userId, req.body);
-      res.status(201).json({ transaction });
+        if (!user || !recipient) {
+          return res.status(404).json({
+            error: 'User or recipient not found',
+            code: 'USER_NOT_FOUND',
+          });
+        }
+
+        // Create transaction object
+        const transaction = new Transaction({
+          userId,
+          recipientId,
+          amount,
+          description,
+          status: 'pending',
+          deviceId: req.headers['x-device-id'],
+          location: req.body.location,
+          ip: req.ip,
+        });
+
+        // Check for fraud
+        const fraudCheck = await fraudDetection.checkTransaction(transaction, user);
+
+        if (fraudCheck.isFraudulent) {
+          logger.warn('Fraudulent transaction detected', {
+            transactionId: transaction.id,
+            userId,
+            recipientId,
+            amount,
+            reason: fraudCheck.reason,
+            riskScore: fraudCheck.riskScore,
+          });
+
+          return res.status(403).json({
+            error: 'Transaction rejected due to suspicious activity',
+            code: 'FRAUD_DETECTED',
+            reason: fraudCheck.reason,
+          });
+        }
+
+        // Process transaction
+        try {
+          await transaction.save();
+
+          // Update user balances
+          await Promise.all([
+            User.findByIdAndUpdate(userId, {
+              $inc: { balance: -amount },
+            }),
+            User.findByIdAndUpdate(recipientId, {
+              $inc: { balance: amount },
+            }),
+          ]);
+
+          // Update transaction status
+          transaction.status = 'completed';
+          await transaction.save();
+
+          logger.info('Transaction completed successfully', {
+            transactionId: transaction.id,
+            userId,
+            recipientId,
+            amount,
+          });
+
+          return res.status(200).json({
+            message: 'Transaction completed successfully',
+            transaction: {
+              id: transaction.id,
+              amount,
+              status: transaction.status,
+              createdAt: transaction.createdAt,
+            },
+          });
+        } catch (error) {
+          // Rollback transaction
+          transaction.status = 'failed';
+          await transaction.save();
+
+          logger.error('Transaction failed', {
+            error,
+            transactionId: transaction.id,
+            userId,
+            recipientId,
+            amount,
+          });
+
+          return res.status(500).json({
+            error: 'Transaction failed',
+            code: 'TRANSACTION_FAILED',
+          });
+        }
+      });
     } catch (error) {
-      logger.error('Failed to create transaction:', error);
-      res.status(500).json({ error: 'Failed to create transaction' });
+      logger.error('Error in createTransaction', { error });
+      return res.status(500).json({
+        error: 'Internal server error',
+        code: 'INTERNAL_ERROR',
+      });
     }
   }
 

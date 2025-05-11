@@ -13,6 +13,8 @@ import { createHash, randomBytes } from "crypto";
 import { verify } from "jsonwebtoken";
 import { promisify } from "util";
 import { AWSError } from "aws-sdk";
+import securityService from '../services/security';
+import crypto from 'crypto';
 
 // Install required type definitions
 // npm install --save-dev @types/sanitize-html @types/html-escaper @types/jsonwebtoken
@@ -443,4 +445,281 @@ async function verifyOriginSignature(origin: string, signature: string): Promise
   } catch (error) {
     return false;
   }
-} 
+}
+
+// Security middleware
+export const securityMiddleware = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    // Skip security checks for non-sensitive endpoints
+    if (isNonSensitiveEndpoint(req.path, req.method)) {
+      return next();
+    }
+
+    // Check request security
+    const securityCheck = await securityService.checkRequestSecurity(req);
+    
+    if (!securityCheck.isSecure) {
+      logger.warn('Security check failed', {
+        ip: req.ip,
+        userId: req.user?.id,
+        path: req.path,
+        reason: securityCheck.reason,
+        riskScore: securityCheck.riskScore,
+      });
+
+      return res.status(403).json({
+        error: 'Access denied due to security concerns',
+        code: 'SECURITY_CHECK_FAILED',
+        reason: securityCheck.reason,
+      });
+    }
+
+    // Add security headers
+    addSecurityHeaders(res);
+
+    // Validate request integrity
+    if (!validateRequestIntegrity(req)) {
+      logger.warn('Request integrity check failed', {
+        ip: req.ip,
+        userId: req.user?.id,
+        path: req.path,
+      });
+
+      return res.status(400).json({
+        error: 'Invalid request',
+        code: 'REQUEST_INTEGRITY_FAILED',
+      });
+    }
+
+    // Check for common attack patterns
+    if (await isAttackPattern(req)) {
+      logger.warn('Attack pattern detected', {
+        ip: req.ip,
+        userId: req.user?.id,
+        path: req.path,
+      });
+
+      return res.status(403).json({
+        error: 'Access denied',
+        code: 'ATTACK_PATTERN_DETECTED',
+      });
+    }
+
+    next();
+  } catch (error) {
+    logger.error('Security middleware error', { error });
+    next(error);
+  }
+};
+
+// Helper functions
+const isNonSensitiveEndpoint = (path: string, method: string): boolean => {
+  const nonSensitivePaths = [
+    '/health',
+    '/metrics',
+    '/docs',
+    '/static',
+  ];
+  
+  return nonSensitivePaths.some(p => path.startsWith(p)) || method === 'GET';
+};
+
+const addSecurityHeaders = (res: Response): void => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  res.setHeader('Content-Security-Policy', "default-src 'self'");
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+};
+
+const validateRequestIntegrity = (req: Request): boolean => {
+  // Check for required headers
+  const requiredHeaders = ['user-agent', 'x-request-id'];
+  if (!requiredHeaders.every(header => req.headers[header])) {
+    return false;
+  }
+
+  // Validate request ID format
+  const requestId = req.headers['x-request-id'] as string;
+  if (!/^[a-f0-9]{32}$/.test(requestId)) {
+    return false;
+  }
+
+  // Validate content type for POST/PUT requests
+  if (['POST', 'PUT'].includes(req.method)) {
+    const contentType = req.headers['content-type'];
+    if (!contentType || !contentType.includes('application/json')) {
+      return false;
+    }
+  }
+
+  return true;
+};
+
+const isAttackPattern = async (req: Request): Promise<boolean> => {
+  const ip = req.ip;
+  const userId = req.user?.id;
+
+  // Check for SQL injection patterns
+  if (hasSQLInjectionPattern(req)) {
+    await blockIP(ip);
+    return true;
+  }
+
+  // Check for XSS patterns
+  if (hasXSSPattern(req)) {
+    await blockIP(ip);
+    return true;
+  }
+
+  // Check for command injection patterns
+  if (hasCommandInjectionPattern(req)) {
+    await blockIP(ip);
+    return true;
+  }
+
+  // Check for path traversal patterns
+  if (hasPathTraversalPattern(req)) {
+    await blockIP(ip);
+    return true;
+  }
+
+  // Check for CSRF token
+  if (['POST', 'PUT', 'DELETE'].includes(req.method)) {
+    const csrfToken = req.headers['x-csrf-token'];
+    if (!csrfToken || !await validateCSRFToken(csrfToken as string, userId)) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
+const hasSQLInjectionPattern = (req: Request): boolean => {
+  const sqlPatterns = [
+    /(\%27)|(\')|(\-\-)|(\%23)|(#)/i,
+    /((\%3D)|(=))[^\n]*((\%27)|(\')|(\-\-)|(\%3B)|(;))/i,
+    /\w*((\%27)|(\'))((\%6F)|o|(\%4F))((\%72)|r|(\%52))/i,
+    /((\%27)|(\'))union/i,
+    /exec(\s|\+)+(s|x)p\w+/i,
+  ];
+
+  const checkValue = (value: string): boolean => {
+    return sqlPatterns.some(pattern => pattern.test(value));
+  };
+
+  // Check query parameters
+  if (Object.values(req.query).some(value => checkValue(String(value)))) {
+    return true;
+  }
+
+  // Check body parameters
+  if (req.body && Object.values(req.body).some(value => checkValue(String(value)))) {
+    return true;
+  }
+
+  return false;
+};
+
+const hasXSSPattern = (req: Request): boolean => {
+  const xssPatterns = [
+    /<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi,
+    /javascript:/gi,
+    /on\w+\s*=/gi,
+    /<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi,
+    /<img\b[^<]*(?:(?!<\/img>)<[^<]*)*<\/img>/gi,
+  ];
+
+  const checkValue = (value: string): boolean => {
+    return xssPatterns.some(pattern => pattern.test(value));
+  };
+
+  // Check query parameters
+  if (Object.values(req.query).some(value => checkValue(String(value)))) {
+    return true;
+  }
+
+  // Check body parameters
+  if (req.body && Object.values(req.body).some(value => checkValue(String(value)))) {
+    return true;
+  }
+
+  return false;
+};
+
+const hasCommandInjectionPattern = (req: Request): boolean => {
+  const commandPatterns = [
+    /[;&|`\$]/,
+    /(\b(cat|chmod|curl|wget|nc|netcat|bash|sh)\b)/i,
+    /(\b(rm|cp|mv|mkdir|touch)\b)/i,
+  ];
+
+  const checkValue = (value: string): boolean => {
+    return commandPatterns.some(pattern => pattern.test(value));
+  };
+
+  // Check query parameters
+  if (Object.values(req.query).some(value => checkValue(String(value)))) {
+    return true;
+  }
+
+  // Check body parameters
+  if (req.body && Object.values(req.body).some(value => checkValue(String(value)))) {
+    return true;
+  }
+
+  return false;
+};
+
+const hasPathTraversalPattern = (req: Request): boolean => {
+  const pathPatterns = [
+    /\.\.\//,
+    /\.\.\\/,
+    /\/\.\.\//,
+    /\\\.\.\\/,
+  ];
+
+  const checkValue = (value: string): boolean => {
+    return pathPatterns.some(pattern => pattern.test(value));
+  };
+
+  // Check query parameters
+  if (Object.values(req.query).some(value => checkValue(String(value)))) {
+    return true;
+  }
+
+  // Check body parameters
+  if (req.body && Object.values(req.body).some(value => checkValue(String(value)))) {
+    return true;
+  }
+
+  return false;
+};
+
+const validateCSRFToken = async (token: string, userId?: string): Promise<boolean> => {
+  if (!userId) {
+    return false;
+  }
+
+  const key = `csrf:${userId}`;
+  const storedToken = await redis.get(key);
+
+  if (!storedToken || storedToken !== token) {
+    return false;
+  }
+
+  // Rotate CSRF token
+  const newToken = crypto.randomBytes(32).toString('hex');
+  await redis.set(key, newToken, 'EX', 3600); // 1 hour expiry
+
+  return true;
+};
+
+const blockIP = async (ip: string): Promise<void> => {
+  const key = `blocked:ip:${ip}`;
+  await redis.set(key, 'true', 'EX', 3600); // 1 hour block
+};
+
+export default securityMiddleware; 

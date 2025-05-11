@@ -1,1 +1,151 @@
- 
+model PaymentRequest {
+  id          String   @id @default(uuid())
+  senderId    String
+  receiverId  String
+  amount      Float
+  currency    String
+  message     String?
+  status      String   // pending, paid, declined, expired
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  fulfilledAt DateTime?
+  expiresAt   DateTime
+  metadata    Json?
+
+  // Relations
+  sender      User     @relation("SentPaymentRequests", fields: [senderId], references: [id])
+  receiver    User     @relation("ReceivedPaymentRequests", fields: [receiverId], references: [id])
+  transaction Transaction? @relation(fields: [transactionId], references: [id])
+  transactionId String? @unique
+
+  @@index([senderId])
+  @@index([receiverId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model AMLActivity {
+  id          String   @id @default(uuid())
+  type        String   // transaction, user, device, location, behavior, session, etc.
+  status      String   // pending, reviewed, resolved, dismissed
+  severity    String   // low, medium, high, critical
+  description String
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  resolvedAt  DateTime?
+  dismissedAt DateTime?
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id])
+  deviceId    String?
+  device      Device?  @relation(fields: [deviceId], references: [id])
+  locationId  String?
+  location    Location? @relation(fields: [locationId], references: [id])
+  behaviorId  String?
+  behavior    Behavior? @relation(fields: [behaviorId], references: [id])
+  sessionId   String?
+  session     Session?  @relation(fields: [sessionId], references: [id])
+
+  @@index([type])
+  @@index([status])
+  @@index([severity])
+  @@index([userId])
+  @@index([createdAt])
+}
+
+model UserRiskScore {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id])
+  score     Float    // 0-10
+  reason    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([score])
+}
+
+model ComplianceStatus {
+  id        String   @id @default(uuid())
+  status    String   // compliant, non-compliant, at-risk
+  reason    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Device {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  deviceId    String   // Unique device identifier
+  deviceType  String
+  deviceName  String?
+  deviceModel String?
+  osVersion   String?
+  appVersion  String?
+  lastSeen    DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  activities  AMLActivity[]
+
+  @@unique([userId, deviceId])
+  @@index([deviceId])
+  @@index([lastSeen])
+}
+
+model Location {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  country     String
+  city        String?
+  latitude    Float?
+  longitude   Float?
+  ipAddress   String?
+  lastSeen    DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  activities  AMLActivity[]
+
+  @@index([country])
+  @@index([ipAddress])
+  @@index([lastSeen])
+}
+
+model Behavior {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  type        String   // login, transaction, etc.
+  pattern     String
+  confidence  Float    // 0-1
+  lastSeen    DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  activities  AMLActivity[]
+
+  @@index([type])
+  @@index([confidence])
+  @@index([lastSeen])
+}
+
+model Session {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  token       String   @unique
+  deviceId    String?
+  ipAddress   String?
+  userAgent   String?
+  startedAt   DateTime @default(now())
+  expiresAt   DateTime
+  lastActive  DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  activities  AMLActivity[]
+
+  @@index([token])
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([lastActive])
+} 

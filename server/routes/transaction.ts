@@ -4,14 +4,28 @@ import { validate } from '../middleware/validation';
 import { transactionSchemas } from '../middleware/validation';
 import { TransactionService } from '../services/transaction';
 import { logger } from '../utils/logger';
+import { rateLimit } from '../middleware/rate-limiter';
+import antiFraudMiddleware from '../middleware/anti-fraud';
+import {
+  createTransaction,
+  getUserTransactions,
+  getTransactionDetails,
+  cancelTransaction,
+} from '../controllers/transaction';
 
 const router = Router();
 const transactionService = new TransactionService();
 
+// Apply authentication middleware to all routes
+router.use(authenticate);
+
+// Apply anti-fraud middleware to all routes
+router.use(antiFraudMiddleware);
+
 // Create a new transaction
 router.post(
   '/',
-  authenticate,
+  rateLimit.transaction,
   verifyPhoneNumber,
   validate(transactionSchemas.create),
   async (req, res, next) => {
@@ -42,7 +56,7 @@ router.post(
 // Get user's transactions
 router.get(
   '/',
-  authenticate,
+  rateLimit.user,
   validate(transactionSchemas.list),
   async (req, res, next) => {
     try {
@@ -67,7 +81,7 @@ router.get(
 // Get transaction by ID
 router.get(
   '/:id',
-  authenticate,
+  rateLimit.user,
   validate(transactionSchemas.get),
   async (req, res, next) => {
     try {
@@ -93,7 +107,6 @@ router.get(
 // Process withdrawal
 router.post(
   '/withdraw',
-  authenticate,
   verifyPhoneNumber,
   validate(transactionSchemas.withdraw),
   async (req, res, next) => {
@@ -122,7 +135,6 @@ router.post(
 // Process deposit
 router.post(
   '/deposit',
-  authenticate,
   verifyPhoneNumber,
   validate(transactionSchemas.deposit),
   async (req, res, next) => {
@@ -151,7 +163,6 @@ router.post(
 // Get transaction statistics (admin only)
 router.get(
   '/stats',
-  authenticate,
   authorize(['ADMIN']),
   async (req, res, next) => {
     try {
@@ -161,6 +172,34 @@ router.get(
       next(error);
     }
   }
+);
+
+// Create transaction
+router.post(
+  '/',
+  rateLimit.transaction,
+  createTransaction
+);
+
+// Get user transactions
+router.get(
+  '/',
+  rateLimit.user,
+  getUserTransactions
+);
+
+// Get transaction details
+router.get(
+  '/:transactionId',
+  rateLimit.user,
+  getTransactionDetails
+);
+
+// Cancel transaction
+router.post(
+  '/:transactionId/cancel',
+  rateLimit.user,
+  cancelTransaction
 );
 
 export default router; 

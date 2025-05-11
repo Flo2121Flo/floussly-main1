@@ -1,12 +1,32 @@
 import { Router } from 'express';
-import { HealthController } from '../controllers/health';
+import {
+  basicHealthCheck,
+  detailedHealthCheck,
+  metrics,
+  readiness,
+  liveness,
+} from '../controllers/health';
+import { rateLimit } from '../middleware/rate-limiter';
 
 const router = Router();
-const healthController = new HealthController();
 
-// Health check routes
-router.get('/', healthController.checkHealth.bind(healthController));
-router.get('/database', healthController.checkDatabase.bind(healthController));
-router.get('/redis', healthController.checkRedis.bind(healthController));
+// Basic health check - no rate limiting
+router.get('/', basicHealthCheck);
+
+// Detailed health check - rate limited
+router.get('/detailed', rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 10, // 10 requests per minute
+}), detailedHealthCheck);
+
+// Metrics endpoint - rate limited
+router.get('/metrics', rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 5, // 5 requests per minute
+}), metrics);
+
+// Kubernetes probes - no rate limiting
+router.get('/ready', readiness);
+router.get('/live', liveness);
 
 export default router; 
