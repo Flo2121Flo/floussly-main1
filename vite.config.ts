@@ -55,6 +55,7 @@ export default defineConfig({
       "@features": path.resolve(__dirname, "client/src/features"),
     },
   },
+  base: process.env.NODE_ENV === 'production' ? '/floussly-main/' : '/',
   root: path.resolve(__dirname, "client"),
   server: {
     port: 5173,
