@@ -1,12 +1,12 @@
 {
   "family": "floussly",
   "networkMode": "awsvpc",
-  "executionRoleArn": "arn:aws:iam::ACCOUNT_ID:role/ecsTaskExecutionRole",
-  "taskRoleArn": "arn:aws:iam::ACCOUNT_ID:role/flousslyTaskRole",
+  "executionRoleArn": "arn:aws:iam::${AWS_ACCOUNT_ID}:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::${AWS_ACCOUNT_ID}:role/ecsTaskRole",
   "containerDefinitions": [
     {
-      "name": "floussly-app",
-      "image": "ACCOUNT_ID.dkr.ecr.REGION.amazonaws.com/floussly:latest",
+      "name": "floussly-backend",
+      "image": "${ECR_REPOSITORY}:${IMAGE_TAG}",
       "essential": true,
       "portMappings": [
         {
@@ -19,27 +19,27 @@
         {
           "name": "NODE_ENV",
           "value": "production"
+        },
+        {
+          "name": "PORT",
+          "value": "3000"
         }
       ],
       "secrets": [
         {
           "name": "DATABASE_URL",
-          "valueFrom": "arn:aws:ssm:REGION:ACCOUNT_ID:parameter/floussly/DATABASE_URL"
-        },
-        {
-          "name": "REDIS_HOST",
-          "valueFrom": "arn:aws:ssm:REGION:ACCOUNT_ID:parameter/floussly/REDIS_HOST"
+          "valueFrom": "arn:aws:ssm:${AWS_REGION}:${AWS_ACCOUNT_ID}:parameter/floussly/database-url"
         },
         {
           "name": "JWT_SECRET",
-          "valueFrom": "arn:aws:ssm:REGION:ACCOUNT_ID:parameter/floussly/JWT_SECRET"
+          "valueFrom": "arn:aws:ssm:${AWS_REGION}:${AWS_ACCOUNT_ID}:parameter/floussly/jwt-secret"
         }
       ],
       "logConfiguration": {
         "logDriver": "awslogs",
         "options": {
           "awslogs-group": "/ecs/floussly",
-          "awslogs-region": "REGION",
+          "awslogs-region": "${AWS_REGION}",
           "awslogs-stream-prefix": "ecs"
         }
       },
@@ -52,7 +52,9 @@
       }
     }
   ],
-  "requiresCompatibilities": ["FARGATE"],
-  "cpu": "1024",
-  "memory": "2048"
+  "requiresCompatibilities": [
+    "FARGATE"
+  ],
+  "cpu": "256",
+  "memory": "512"
 } 
