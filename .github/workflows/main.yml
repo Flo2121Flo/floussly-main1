@@ -78,7 +78,9 @@ jobs:
     needs: build
     if: github.ref == 'refs/heads/develop'
     runs-on: ubuntu-latest
-    environment: staging
+    environment:
+      name: staging
+      url: https://staging.floussly.com
     
     steps:
       - uses: actions/checkout@v3
@@ -120,7 +122,9 @@ jobs:
     needs: build
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    environment: production
+    environment:
+      name: production
+      url: https://floussly.com
     
     steps:
       - uses: actions/checkout@v3
