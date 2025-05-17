@@ -5,6 +5,7 @@ import { config } from '../config/appConfig';
 import { NotificationService } from './NotificationService';
 import { AuditService, AuditEventType } from './AuditService';
 import { v4 as uuidv4 } from 'uuid';
+import { TransactionModel } from '../models/Transaction';
 
 // Withdrawal status enum
 export enum WithdrawalStatus {
@@ -21,12 +22,11 @@ export interface WithdrawalReview {
   userId: string;
   amount: number;
   currency: string;
-  status: WithdrawalStatus;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
   reviewerId?: string;
-  reviewNotes?: string;
+  notes?: string;
   createdAt: Date;
   updatedAt: Date;
-  reviewedAt?: Date;
 }
 
 // Withdrawal review service class
@@ -35,6 +35,13 @@ export class WithdrawalReviewService {
   private pool: Pool;
   private notificationService: NotificationService;
   private auditService: AuditService;
+  private transactionModel: TransactionModel;
+  private readonly thresholds = {
+    0: 1000, // Basic KYC
+    1: 5000, // Enhanced KYC
+    2: 10000, // Full KYC
+    3: 50000 // Premium KYC
+  };
 
   private constructor() {
     this.pool = new Pool({
@@ -43,6 +50,7 @@ export class WithdrawalReviewService {
     });
     this.notificationService = NotificationService.getInstance();
     this.auditService = AuditService.getInstance();
+    this.transactionModel = new TransactionModel();
   }
 
   public static getInstance(): WithdrawalReviewService {
@@ -73,16 +81,8 @@ export class WithdrawalReviewService {
       );
       const monthlyTotal = historyResult.rows[0]?.total_amount || 0;
 
-      // Define review thresholds based on KYC level
-      const thresholds = {
-        0: 100, // Basic KYC
-        1: 1000, // Enhanced KYC
-        2: 5000, // Full KYC
-        3: 10000 // Premium KYC
-      };
-
-      return amount > thresholds[kycLevel] || 
-             (amount + monthlyTotal) > thresholds[kycLevel] * 2;
+      return amount > this.thresholds[kycLevel as keyof typeof this.thresholds] || 
+             (amount + monthlyTotal) > this.thresholds[kycLevel as keyof typeof this.thresholds] * 2;
     } catch (error) {
       logger.error('Failed to check withdrawal review status', { error: error.message });
       return true; // Default to requiring review on error
@@ -367,5 +367,25 @@ export class WithdrawalReviewService {
       logger.error('Failed to get user review history', { error: error.message });
       throw error;
     }
+  }
+
+  private async getMonthlyWithdrawalTotal(userId: string): Promise<number> {
+    try {
+      const startDate = new Date();
+      startDate.setMonth(startDate.getMonth() - 1);
+
+      const transactions = await this.transactionModel.findByUserId(userId);
+      return transactions
+        .filter(t => t.type === 'DEBIT' && t.createdAt >= startDate)
+        .reduce((sum, t) => sum + t.amount, 0);
+    } catch (error) {
+      const err = error as Error;
+      logger.error('Failed to get monthly withdrawal total', { error: err.message });
+      throw new Error(`Failed to get monthly withdrawal total: ${err.message}`);
+    }
+  }
+
+  private generateReviewId(): string {
+    return `rev_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }
 } 

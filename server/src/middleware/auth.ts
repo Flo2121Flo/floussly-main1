@@ -6,6 +6,18 @@ import { logger } from '../utils/logger';
 import { rateLimit } from 'express-rate-limit';
 import helmet from 'helmet';
 import { sanitizeInput } from '../utils/validators';
+import { config } from '../config/config';
+
+declare global {
+  namespace Express {
+    interface Request {
+      user?: {
+        id: string;
+        userId: string;
+      };
+    }
+  }
+}
 
 // Rate limiting configuration
 export const apiLimiter = rateLimit({
@@ -15,57 +27,19 @@ export const apiLimiter = rateLimit({
 });
 
 // JWT verification middleware
-export const authMiddleware = async (req: Request, res: Response, next: NextFunction) => {
+export const requireAuth = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    // Check for token in cookies first, then headers
-    const token = req.cookies.auth_token || req.headers.authorization?.split(' ')[1];
-
-    if (!token) {
-      return res.status(401).json({ error: 'Authentication required' });
-    }
-
-    // Check if token is blacklisted
-    const isBlacklisted = await redis.get(`blacklist:${token}`);
-    if (isBlacklisted) {
-      return res.status(401).json({ error: 'Token has been invalidated' });
-    }
-
-    // Verify token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET!) as any;
+    const token = req.headers.authorization?.split(' ')[1];
     
-    // Get user from database
-    const user = await User.findById(decoded.userId);
-    if (!user) {
-      return res.status(401).json({ error: 'User not found' });
+    if (!token) {
+      return res.status(401).json({ error: 'No token provided' });
     }
 
-    // Check if user is active
-    if (!user.isActive) {
-      return res.status(403).json({ error: 'Account is deactivated' });
-    }
-
-    // Check if user's tier has changed
-    if (user.tier !== decoded.tier) {
-      return res.status(401).json({ error: 'Session invalidated due to account changes' });
-    }
-
-    // Add user to request
-    req.user = user;
-
-    // Add security headers
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('X-Frame-Options', 'DENY');
-    res.setHeader('X-XSS-Protection', '1; mode=block');
-    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
-
+    const decoded = jwt.verify(token, config.JWT_SECRET) as { id: string; userId: string };
+    req.user = decoded;
     next();
-  } catch (error) {
-    logger.error('Authentication error', {
-      error: error.message,
-      stack: error.stack,
-      ip: req.ip,
-      timestamp: new Date().toISOString()
-    });
+  } catch (error: any) {
+    logger.error('Authentication error', { error: error.message });
     res.status(401).json({ error: 'Invalid token' });
   }
 };

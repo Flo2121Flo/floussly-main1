@@ -1,0 +1,98 @@
+{
+  "common": {
+    "back": "Back",
+    "cancel": "Cancel",
+    "create": "Create",
+    "retry": "Retry",
+    "save": "Save",
+    "delete": "Delete",
+    "edit": "Edit",
+    "loading": "Loading...",
+    "error": "Error",
+    "success": "Success"
+  },
+  "navigation": {
+    "home": "Home",
+    "transactions": "Transactions",
+    "savings": "Savings",
+    "profile": "Profile"
+  },
+  "transactions": {
+    "title": "Transactions",
+    "trends": "Transaction Trends",
+    "details": "Transaction Details",
+    "amount": "Amount",
+    "date": "Date",
+    "status": "Status",
+    "type": "Type",
+    "recipient": "Recipient",
+    "sender": "Sender",
+    "description": "Description",
+    "noTransactions": "No transactions found",
+    "filter": "Filter",
+    "search": "Search transactions"
+  },
+  "savings": {
+    "title": "Group Savings",
+    "createGroup": "Create New Group",
+    "groupName": "Group Name",
+    "targetAmount": "Target Amount",
+    "members": "{{count}} Members",
+    "nextContribution": "Next Contribution: {{date}}",
+    "actions": {
+      "contribute": "Contribute",
+      "join": "Join Group",
+      "leave": "Leave Group"
+    },
+    "errors": {
+      "nameRequired": "Group name is required",
+      "invalidTarget": "Please enter a valid target amount",
+      "createFailed": "Failed to create group"
+    },
+    "groupCreated": "Group created successfully",
+    "joinedGroup": "Successfully joined the group",
+    "leftGroup": "Successfully left the group",
+    "contributionMade": "Contribution made successfully"
+  },
+  "agents": {
+    "title": "Agent Management",
+    "search": "Search agents",
+    "id": "ID",
+    "status": "Status",
+    "transactions": "Transactions",
+    "volume": "Volume",
+    "allStatuses": "All Statuses",
+    "status": {
+      "active": "Active",
+      "inactive": "Inactive",
+      "pending": "Pending"
+    },
+    "actions": {
+      "activate": "Activate",
+      "deactivate": "Deactivate",
+      "generateReport": "Generate Report"
+    },
+    "statusUpdated": "Agent status updated to {{status}}",
+    "reportGenerated": "Report generated successfully"
+  },
+  "kyc": {
+    "title": "KYC Document Upload",
+    "required": "Required Documents",
+    "optional": "Optional Documents",
+    "upload": "Upload Document",
+    "submit": "Submit Documents",
+    "success": "Documents submitted successfully",
+    "errors": {
+      "uploadFailed": "Failed to upload document",
+      "submitFailed": "Failed to submit documents",
+      "requiredMissing": "Please upload all required documents"
+    }
+  },
+  "errors": {
+    "failedToLoadAgents": "Failed to load agents",
+    "failedToLoadGroups": "Failed to load groups",
+    "failedToLoadTransactions": "Failed to load transactions",
+    "networkError": "Network error. Please check your connection",
+    "unknownError": "An unknown error occurred"
+  }
+} 

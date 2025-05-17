@@ -21,9 +21,8 @@
       "bundleIdentifier": "com.floussly.app",
       "buildNumber": "1.0.0",
       "infoPlist": {
-        "NSCameraUsageDescription": "We need access to your camera for scanning QR codes and documents",
-        "NSPhotoLibraryUsageDescription": "We need access to your photos for uploading documents",
-        "NSLocationWhenInUseUsageDescription": "We need your location to show nearby agents and services",
+        "NSCameraUsageDescription": "We need access to your camera to scan QR codes for payments",
+        "NSPhotoLibraryUsageDescription": "We need access to your photos to upload KYC documents",
         "NSFaceIDUsageDescription": "We use Face ID to secure your account"
       }
     },
@@ -38,8 +37,6 @@
         "CAMERA",
         "READ_EXTERNAL_STORAGE",
         "WRITE_EXTERNAL_STORAGE",
-        "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION",
         "USE_BIOMETRIC",
         "USE_FINGERPRINT"
       ]
@@ -47,23 +44,17 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
+    "extra": {
+      "eas": {
+        "projectId": "your-project-id"
+      }
+    },
     "plugins": [
-      [
-        "expo-camera",
-        {
-          "cameraPermission": "Allow Floussly to access your camera for scanning QR codes and documents."
-        }
-      ],
-      [
-        "expo-location",
-        {
-          "locationAlwaysAndWhenInUsePermission": "Allow Floussly to use your location to show nearby agents and services."
-        }
-      ],
       [
         "expo-image-picker",
         {
-          "photosPermission": "Allow Floussly to access your photos for uploading documents."
+          "photosPermission": "Allow Floussly to access your photos to upload KYC documents.",
+          "cameraPermission": "Allow Floussly to access your camera to scan QR codes."
         }
       ]
     ]

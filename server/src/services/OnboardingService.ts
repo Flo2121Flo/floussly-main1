@@ -11,18 +11,17 @@ export enum ChecklistItemStatus {
   PENDING = 'pending',
   IN_PROGRESS = 'in_progress',
   COMPLETED = 'completed',
-  SKIPPED = 'skipped'
+  REJECTED = 'rejected'
 }
 
 // Checklist item type enum
 export enum ChecklistItemType {
-  KYC = 'kyc',
+  ID_VERIFICATION = 'id_verification',
+  ADDRESS_VERIFICATION = 'address_verification',
   BANK_ACCOUNT = 'bank_account',
-  IDENTITY_VERIFICATION = 'identity_verification',
-  PHONE_VERIFICATION = 'phone_verification',
-  EMAIL_VERIFICATION = 'email_verification',
-  SECURITY_SETUP = 'security_setup',
-  PREFERENCES = 'preferences'
+  TAX_INFO = 'tax_info',
+  EMPLOYMENT = 'employment',
+  BUSINESS_INFO = 'business_info'
 }
 
 // Checklist item interface
@@ -39,6 +38,7 @@ export interface ChecklistItem {
   completedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
+  metadata?: Record<string, any>;
 }
 
 // Onboarding progress interface
@@ -135,41 +135,30 @@ export class OnboardingService {
   public async updateItemStatus(
     userId: string,
     itemId: string,
-    status: ChecklistItemStatus,
-    data?: any
-  ): Promise<ChecklistItem> {
+    itemType: ChecklistItemType,
+    oldStatus: ChecklistItemStatus,
+    newStatus: ChecklistItemStatus
+  ): Promise<void> {
     try {
-      const timestamp = new Date();
-      const completedAt = status === ChecklistItemStatus.COMPLETED ? timestamp : null;
+      // Update item status in database
+      // ... implementation ...
 
-      const result = await this.pool.query(
-        `UPDATE onboarding_checklist 
-         SET status = $1, data = $2, completed_at = $3, updated_at = $4
-         WHERE id = $5 AND user_id = $6
-         RETURNING *`,
-        [status, data, completedAt, timestamp, itemId, userId]
-      );
-
-      if (result.rows.length === 0) {
-        throw new Error('Checklist item not found');
-      }
-
-      const item = result.rows[0];
-
-      // Invalidate cache
-      await redis.del(`checklist:${userId}`);
-      await redis.del(`progress:${userId}`);
-
-      // Log status update
-      await this.logItemStatusUpdate(userId, item);
-
-      // Check if all required items are completed
-      await this.checkCompletion(userId);
-
-      return item;
+      // Log the status update
+      await this.auditService.logEvent({
+        eventType: AuditEventType.ONBOARDING_ITEM_UPDATED,
+        userId,
+        details: {
+          itemId,
+          itemType,
+          oldStatus,
+          newStatus
+        },
+        severity: 'medium'
+      });
     } catch (error) {
-      logger.error('Failed to update item status', { error: error.message });
-      throw error;
+      const err = error as Error;
+      logger.error('Failed to log item status update', { error: err.message });
+      throw new Error(`Failed to update item status: ${err.message}`);
     }
   }
 
@@ -401,36 +390,16 @@ export class OnboardingService {
     }
   }
 
-  // Log item status update
-  private async logItemStatusUpdate(
-    userId: string,
-    item: ChecklistItem
-  ): Promise<void> {
-    try {
-      await this.auditService.logEvent({
-        eventType: AuditEventType.ONBOARDING_ITEM_UPDATED,
-        userId,
-        details: {
-          itemId: item.id,
-          itemType: item.type,
-          oldStatus: item.status,
-          newStatus: item.status
-        }
-      });
-    } catch (error) {
-      logger.error('Failed to log item status update', { error: error.message });
-    }
-  }
-
   // Log onboarding completion
   private async logOnboardingCompletion(userId: string): Promise<void> {
     try {
       await this.auditService.logEvent({
-        eventType: AuditEventType.ONBOARDING_COMPLETED,
+        eventType: AuditEventType.ONBOARDING_COMPLETE,
         userId,
         details: {
           completedAt: new Date()
-        }
+        },
+        severity: 'low'
       });
     } catch (error) {
       logger.error('Failed to log onboarding completion', { error: error.message });

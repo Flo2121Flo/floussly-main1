@@ -4,6 +4,7 @@ import { logger } from '../utils/logger';
 import { config } from '../config/appConfig';
 import { AuditService, AuditEventType } from './AuditService';
 import { NotificationService } from './NotificationService';
+import { TransactionModel } from '../models/Transaction';
 
 // Risk level enum
 export enum RiskLevel {
@@ -31,6 +32,12 @@ export interface RiskProfile {
   recommendations: string[];
 }
 
+export interface RiskScore {
+  score: number;
+  level: 'LOW' | 'MEDIUM' | 'HIGH';
+  factors: RiskFactor[];
+}
+
 // User risk profile service class
 export class UserRiskProfileService {
   private static instance: UserRiskProfileService;
@@ -38,6 +45,7 @@ export class UserRiskProfileService {
   private auditService: AuditService;
   private notificationService: NotificationService;
   private cacheTTL: number = 3600; // 1 hour
+  private transactionModel: TransactionModel;
 
   private constructor() {
     this.pool = new Pool({
@@ -46,6 +54,7 @@ export class UserRiskProfileService {
     });
     this.auditService = AuditService.getInstance();
     this.notificationService = NotificationService.getInstance();
+    this.transactionModel = new TransactionModel();
   }
 
   public static getInstance(): UserRiskProfileService {
@@ -56,66 +65,31 @@ export class UserRiskProfileService {
   }
 
   // Get user's risk profile
-  public async getRiskProfile(userId: string): Promise<RiskProfile> {
+  public async getRiskProfile(userId: string): Promise<RiskScore> {
     try {
-      // Check cache first
-      const cached = await redis.get(`risk_profile:${userId}`);
-      if (cached) {
-        return JSON.parse(cached);
-      }
-
-      // Calculate risk profile
-      const profile = await this.calculateRiskProfile(userId);
-
-      // Cache the result
-      await redis.set(
-        `risk_profile:${userId}`,
-        JSON.stringify(profile),
-        'EX',
-        this.cacheTTL
-      );
-
-      return profile;
+      const userData = await this.getUserData(userId);
+      return this.calculateRiskProfile(userData);
     } catch (error) {
-      logger.error('Failed to get risk profile', { error: error.message });
-      throw error;
+      const err = error as Error;
+      logger.error('Failed to get risk profile', { error: err.message });
+      throw new Error(`Failed to get risk profile: ${err.message}`);
     }
   }
 
   // Calculate risk profile
-  private async calculateRiskProfile(userId: string): Promise<RiskProfile> {
+  private async calculateRiskProfile(userData: any): Promise<RiskScore> {
     try {
-      // Get user data
-      const userData = await this.getUserData(userId);
-      
       // Calculate risk factors
-      const factors = await this.calculateRiskFactors(userId, userData);
+      const factors = await this.calculateRiskFactors(userData);
       
       // Calculate overall risk score
       const riskScore = this.calculateRiskScore(factors);
       
-      // Determine risk level
-      const riskLevel = this.determineRiskLevel(riskScore);
-      
-      // Generate recommendations
-      const recommendations = this.generateRecommendations(factors, riskLevel);
-
-      const profile: RiskProfile = {
-        userId,
-        riskLevel,
-        riskScore,
-        factors,
-        lastUpdated: new Date(),
-        recommendations
-      };
-
-      // Log risk profile update
-      await this.logRiskProfileUpdate(userId, profile);
-
-      return profile;
+      return riskScore;
     } catch (error) {
-      logger.error('Failed to calculate risk profile', { error: error.message });
-      throw error;
+      const err = error as Error;
+      logger.error('Failed to calculate risk profile', { error: err.message });
+      throw new Error(`Failed to calculate risk profile: ${err.message}`);
     }
   }
 
@@ -141,16 +115,14 @@ export class UserRiskProfileService {
 
       return result.rows[0];
     } catch (error) {
-      logger.error('Failed to get user data', { error: error.message });
-      throw error;
+      const err = error as Error;
+      logger.error('Failed to get user data', { error: err.message });
+      throw new Error(`Failed to get user data: ${err.message}`);
     }
   }
 
   // Calculate risk factors
-  private async calculateRiskFactors(
-    userId: string,
-    userData: any
-  ): Promise<RiskFactor[]> {
+  private async calculateRiskFactors(userData: any): Promise<RiskFactor[]> {
     const factors: RiskFactor[] = [];
 
     try {
@@ -163,23 +135,10 @@ export class UserRiskProfileService {
       });
 
       // Account Age Factor
-      factors.push({
-        name: 'account_age',
-        weight: 0.1,
-        value: this.calculateAccountAgeFactor(userData.created_at),
-        details: { account_age: userData.created_at }
-      });
+      factors.push(await this.calculateAccountAgeFactor(userData));
 
       // Transaction History Factor
-      factors.push({
-        name: 'transaction_history',
-        weight: 0.15,
-        value: this.calculateTransactionHistoryFactor(userData),
-        details: {
-          total_transactions: userData.total_transactions,
-          total_volume: userData.total_volume
-        }
-      });
+      factors.push(await this.calculateTransactionHistoryFactor(userData));
 
       // Recipient Diversity Factor
       factors.push({
@@ -193,15 +152,7 @@ export class UserRiskProfileService {
       });
 
       // Location Diversity Factor
-      factors.push({
-        name: 'location_diversity',
-        weight: 0.1,
-        value: this.calculateLocationDiversityFactor(userData),
-        details: {
-          unique_ips: userData.unique_ips,
-          total_transactions: userData.total_transactions
-        }
-      });
+      factors.push(await this.calculateLocationFactor(userData));
 
       // Fraud History Factor
       factors.push({
@@ -215,17 +166,13 @@ export class UserRiskProfileService {
       });
 
       // Device Security Factor
-      factors.push({
-        name: 'device_security',
-        weight: 0.15,
-        value: await this.calculateDeviceSecurityFactor(userId),
-        details: {}
-      });
+      factors.push(await this.calculateDeviceSecurityFactor(userData));
 
       return factors;
     } catch (error) {
-      logger.error('Failed to calculate risk factors', { error: error.message });
-      throw error;
+      const err = error as Error;
+      logger.error('Failed to calculate risk factors', { error: err.message });
+      throw new Error(`Failed to calculate risk factors: ${err.message}`);
     }
   }
 
@@ -241,26 +188,53 @@ export class UserRiskProfileService {
   }
 
   // Calculate account age factor
-  private calculateAccountAgeFactor(createdAt: Date): number {
-    const ageInDays = (Date.now() - new Date(createdAt).getTime()) / (1000 * 60 * 60 * 24);
-    
-    if (ageInDays < 30) return 1.0;
-    if (ageInDays < 90) return 0.8;
-    if (ageInDays < 180) return 0.6;
-    if (ageInDays < 365) return 0.4;
-    return 0.2;
+  private async calculateAccountAgeFactor(userData: any): Promise<RiskFactor> {
+    try {
+      const accountAge = this.calculateAccountAge(userData.created_at);
+      let score = 0;
+
+      if (accountAge < 30) {
+        score = 0.8;
+      } else if (accountAge < 90) {
+        score = 0.5;
+      } else if (accountAge < 180) {
+        score = 0.3;
+      } else {
+        score = 0.1;
+      }
+
+      return {
+        name: 'Account Age',
+        weight: 0.2,
+        value: score,
+        details: `Account age: ${accountAge} days`
+      };
+    } catch (error) {
+      const err = error as Error;
+      logger.error('Failed to calculate account age factor', { error: err.message });
+      throw new Error(`Failed to calculate account age factor: ${err.message}`);
+    }
   }
 
   // Calculate transaction history factor
-  private calculateTransactionHistoryFactor(userData: any): number {
-    if (!userData.total_transactions) return 1.0;
-    
-    const avgTransactionAmount = userData.total_volume / userData.total_transactions;
-    
-    if (avgTransactionAmount > 10000) return 0.8;
-    if (avgTransactionAmount > 5000) return 0.6;
-    if (avgTransactionAmount > 1000) return 0.4;
-    return 0.2;
+  private async calculateTransactionHistoryFactor(userData: any): Promise<RiskFactor> {
+    try {
+      const transactions = await this.transactionModel.findByUserId(userData.id);
+      const totalTransactions = transactions.length;
+      const failedTransactions = transactions.filter(t => t.status === 'FAILED').length;
+      const score = failedTransactions / totalTransactions || 0;
+
+      return {
+        name: 'Transaction History',
+        weight: 0.3,
+        value: score,
+        details: `Failed transactions: ${failedTransactions}/${totalTransactions}`
+      };
+    } catch (error) {
+      const err = error as Error;
+      logger.error('Failed to calculate transaction history factor', { error: err.message });
+      throw new Error(`Failed to calculate transaction history factor: ${err.message}`);
+    }
   }
 
   // Calculate recipient diversity factor
@@ -275,16 +249,21 @@ export class UserRiskProfileService {
     return 0.2;
   }
 
-  // Calculate location diversity factor
-  private calculateLocationDiversityFactor(userData: any): number {
-    if (!userData.total_transactions) return 1.0;
-    
-    const diversityRatio = userData.unique_ips / userData.total_transactions;
-    
-    if (diversityRatio < 0.2) return 0.8;
-    if (diversityRatio < 0.4) return 0.6;
-    if (diversityRatio < 0.6) return 0.4;
-    return 0.2;
+  // Calculate location factor
+  private async calculateLocationFactor(userData: any): Promise<RiskFactor> {
+    try {
+      const locationScore = this.assessLocationRisk(userData.locations);
+      return {
+        name: 'Location Risk',
+        weight: 0.15,
+        value: locationScore,
+        details: 'Location risk assessment'
+      };
+    } catch (error) {
+      const err = error as Error;
+      logger.error('Failed to calculate location factor', { error: err.message });
+      throw new Error(`Failed to calculate location factor: ${err.message}`);
+    }
   }
 
   // Calculate fraud history factor
@@ -298,38 +277,42 @@ export class UserRiskProfileService {
   }
 
   // Calculate device security factor
-  private async calculateDeviceSecurityFactor(userId: string): Promise<number> {
+  private async calculateDeviceSecurityFactor(userData: any): Promise<RiskFactor> {
     try {
-      const result = await this.pool.query(
-        `SELECT 
-          COUNT(*) as total_devices,
-          COUNT(CASE WHEN is_active THEN 1 END) as active_devices,
-          COUNT(DISTINCT ip_address) as unique_ips
-         FROM sessions
-         WHERE user_id = $1`,
-        [userId]
-      );
-
-      const { total_devices, active_devices, unique_ips } = result.rows[0];
-
-      if (total_devices > 5) return 0.8;
-      if (active_devices > 3) return 0.6;
-      if (unique_ips > 2) return 0.4;
-      return 0.2;
+      const deviceScore = this.assessDeviceSecurity(userData.devices);
+      return {
+        name: 'Device Security',
+        weight: 0.2,
+        value: deviceScore,
+        details: 'Device security assessment'
+      };
     } catch (error) {
-      logger.error('Failed to calculate device security factor', { error: error.message });
-      return 1.0;
+      const err = error as Error;
+      logger.error('Failed to calculate device security factor', { error: err.message });
+      throw new Error(`Failed to calculate device security factor: ${err.message}`);
     }
   }
 
   // Calculate overall risk score
-  private calculateRiskScore(factors: RiskFactor[]): number {
-    const weightedSum = factors.reduce(
-      (sum, factor) => sum + (factor.value * factor.weight),
-      0
-    );
-    
-    return Math.min(Math.max(weightedSum, 0), 1);
+  private calculateRiskScore(factors: RiskFactor[]): RiskScore {
+    const totalScore = factors.reduce((sum, factor) => sum + (factor.value * factor.weight), 0);
+    const totalWeight = factors.reduce((sum, factor) => sum + factor.weight, 0);
+    const normalizedScore = totalScore / totalWeight;
+
+    let level: 'LOW' | 'MEDIUM' | 'HIGH';
+    if (normalizedScore < 0.3) {
+      level = 'LOW';
+    } else if (normalizedScore < 0.7) {
+      level = 'MEDIUM';
+    } else {
+      level = 'HIGH';
+    }
+
+    return {
+      score: normalizedScore,
+      level,
+      factors
+    };
   }
 
   // Determine risk level
@@ -463,5 +446,21 @@ export class UserRiskProfileService {
       logger.error('Failed to get risk statistics', { error: error.message });
       throw error;
     }
+  }
+
+  private calculateAccountAge(createdAt: Date): number {
+    const now = new Date();
+    const diffTime = Math.abs(now.getTime() - createdAt.getTime());
+    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  }
+
+  private assessDeviceSecurity(devices: any[]): number {
+    // Implement device security assessment logic
+    return 0.5;
+  }
+
+  private assessLocationRisk(locations: any[]): number {
+    // Implement location risk assessment logic
+    return 0.5;
   }
 } 
