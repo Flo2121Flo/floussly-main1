@@ -1,0 +1,25 @@
+name: production
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+
+environment:
+  name: production
+  url: https://floussly.com
+
+deployment_branch_policy:
+  protected_branches: true
+  custom_branches:
+    - main
+
+required_contexts:
+  - validate
+  - build
+  - deploy-staging 

@@ -1,5 +1,9 @@
 import { env } from "../lib/env";
 import { Request, Response, NextFunction } from 'express';
+import { Platform } from 'react-native';
+import * as Keychain from 'react-native-keychain';
+import { getUniqueId } from 'react-native-device-info';
+import { logger } from '../utils/logger';
 
 export const securityConfig = {
   // Content Security Policy
@@ -111,7 +115,119 @@ export const securityConfig = {
     performanceMonitoring: true,
     userBehaviorTracking: false,
   },
+
+  // Token storage
+  tokenStorage: {
+    async storeToken(token: string): Promise<void> {
+      try {
+        await Keychain.setGenericPassword('auth_token', token);
+      } catch (error) {
+        logger.error('Failed to store token', { error: error.message });
+        throw error;
+      }
+    },
+    async getToken(): Promise<string | null> {
+      try {
+        const credentials = await Keychain.getGenericPassword();
+        return credentials ? credentials.password : null;
+      } catch (error) {
+        logger.error('Failed to get token', { error: error.message });
+        return null;
+      }
+    },
+    async removeToken(): Promise<void> {
+      try {
+        await Keychain.resetGenericPassword();
+      } catch (error) {
+        logger.error('Failed to remove token', { error: error.message });
+        throw error;
+      }
+    }
+  },
+
+  // Device fingerprinting
+  deviceFingerprint: {
+    async getFingerprint(): Promise<string> {
+      try {
+        const deviceId = await getUniqueId();
+        return deviceId;
+      } catch (error) {
+        logger.error('Failed to get device fingerprint', { error: error.message });
+        throw error;
+      }
+    }
+  },
+
+  // Biometric authentication
+  biometric: {
+    async isAvailable(): Promise<boolean> {
+      try {
+        const biometryType = await Keychain.getSupportedBiometryType();
+        return biometryType !== null;
+      } catch (error) {
+        logger.error('Failed to check biometric availability', { error: error.message });
+        return false;
+      }
+    },
+    async authenticate(): Promise<boolean> {
+      try {
+        const result = await Keychain.authenticate('Authenticate to continue');
+        return result;
+      } catch (error) {
+        logger.error('Biometric authentication failed', { error: error.message });
+        return false;
+      }
+    }
+  },
+
+  // Network security
+  network: {
+    sslPinning: {
+      enabled: true,
+      domains: ['api.floussly.com'],
+      publicKeys: [
+        // Add your SSL public keys here
+      ]
+    },
+    certificateTransparency: true,
+    cleartextTraffic: false
+  },
+
+  // App security
+  app: {
+    jailbreakDetection: true,
+    rootDetection: true,
+    debuggerDetection: true,
+    emulatorDetection: true,
+    screenRecordingDetection: true
+  },
+
+  // Data security
+  data: {
+    encryption: {
+      algorithm: 'AES-256-GCM',
+      keySize: 256
+    },
+    secureStorage: {
+      enabled: true,
+      encryptionKey: 'your-encryption-key'
+    }
+  }
 };
+
+// Platform-specific security settings
+export const platformSecurity = Platform.select({
+  ios: {
+    keychainAccessibility: Keychain.ACCESSIBLE.WHEN_UNLOCKED,
+    keychainAccessControl: Keychain.ACCESS_CONTROL.BIOMETRY_ANY,
+    minimumBiometryLevel: Keychain.BIOMETRY_TYPE.TOUCH_ID
+  },
+  android: {
+    keychainAccessibility: Keychain.ACCESSIBLE.WHEN_UNLOCKED,
+    keychainAccessControl: Keychain.ACCESS_CONTROL.BIOMETRY_ANY,
+    minimumBiometryLevel: Keychain.BIOMETRY_TYPE.FINGERPRINT
+  }
+});
 
 // Security middleware
 export function applySecurityHeaders(req: Request, res: Response, next: NextFunction) {

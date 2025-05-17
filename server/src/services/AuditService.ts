@@ -2,64 +2,75 @@ import { Pool } from 'pg';
 import { logger } from '../utils/logger';
 import { redis } from '../config/redis';
 import { config } from '../config/appConfig';
+import { S3 } from 'aws-sdk';
+import { v4 as uuidv4 } from 'uuid';
 
+// Initialize S3 client for immutable audit logs
+const s3 = new S3({
+  region: config.AWS_REGION,
+  accessKeyId: config.AWS_ACCESS_KEY_ID,
+  secretAccessKey: config.AWS_SECRET_ACCESS_KEY
+});
+
+// Audit event types
 export enum AuditEventType {
-  // User Events
-  USER_REGISTRATION = 'USER_REGISTRATION',
+  // User events
   USER_LOGIN = 'USER_LOGIN',
   USER_LOGOUT = 'USER_LOGOUT',
-  PASSWORD_CHANGE = 'PASSWORD_CHANGE',
-  MFA_ENABLE = 'MFA_ENABLE',
-  MFA_DISABLE = 'MFA_DISABLE',
-  BIOMETRIC_ENABLE = 'BIOMETRIC_ENABLE',
-  BIOMETRIC_DISABLE = 'BIOMETRIC_DISABLE',
-  
-  // KYC Events
-  KYC_SUBMISSION = 'KYC_SUBMISSION',
-  KYC_APPROVAL = 'KYC_APPROVAL',
-  KYC_REJECTION = 'KYC_REJECTION',
-  KYC_LEVEL_CHANGE = 'KYC_LEVEL_CHANGE',
-  
-  // Transaction Events
+  USER_REGISTER = 'USER_REGISTER',
+  USER_UPDATE = 'USER_UPDATE',
+  USER_DELETE = 'USER_DELETE',
+
+  // KYC events
+  KYC_SUBMIT = 'KYC_SUBMIT',
+  KYC_APPROVE = 'KYC_APPROVE',
+  KYC_REJECT = 'KYC_REJECT',
+  KYC_UPDATE = 'KYC_UPDATE',
+
+  // Transaction events
   TRANSACTION_CREATE = 'TRANSACTION_CREATE',
-  TRANSACTION_COMPLETE = 'TRANSACTION_COMPLETE',
-  TRANSACTION_FAIL = 'TRANSACTION_FAIL',
-  TRANSACTION_REVERSE = 'TRANSACTION_REVERSE',
-  
-  // AML Events
+  TRANSACTION_APPROVE = 'TRANSACTION_APPROVE',
+  TRANSACTION_REJECT = 'TRANSACTION_REJECT',
+  TRANSACTION_CANCEL = 'TRANSACTION_CANCEL',
+
+  // AML events
   AML_CHECK = 'AML_CHECK',
   AML_FLAG = 'AML_FLAG',
   AML_CLEAR = 'AML_CLEAR',
-  
-  // Security Events
-  SUSPICIOUS_ACTIVITY = 'SUSPICIOUS_ACTIVITY',
-  FRAUD_ATTEMPT = 'FRAUD_ATTEMPT',
+
+  // Security events
   SECURITY_BREACH = 'SECURITY_BREACH',
-  
-  // System Events
-  CONFIG_CHANGE = 'CONFIG_CHANGE',
-  FEATURE_TOGGLE = 'FEATURE_TOGGLE',
-  SYSTEM_ERROR = 'SYSTEM_ERROR'
+  SECURITY_ALERT = 'SECURITY_ALERT',
+  SECURITY_BLOCK = 'SECURITY_BLOCK',
+
+  // System events
+  SYSTEM_ERROR = 'SYSTEM_ERROR',
+  SYSTEM_WARNING = 'SYSTEM_WARNING',
+  SYSTEM_INFO = 'SYSTEM_INFO'
 }
 
-interface AuditEvent {
+// Audit event interface
+export interface AuditEvent {
   eventId: string;
   eventType: AuditEventType;
   userId?: string;
-  ipAddress: string;
-  userAgent: string;
+  ipAddress?: string;
+  userAgent?: string;
   details: Record<string, any>;
   timestamp: Date;
-  severity: 'INFO' | 'WARNING' | 'ERROR' | 'CRITICAL';
+  severity: 'low' | 'medium' | 'high' | 'critical';
 }
 
+// Audit service class
 export class AuditService {
   private static instance: AuditService;
   private pool: Pool;
+  private readonly CACHE_TTL = 3600; // 1 hour
 
   private constructor() {
     this.pool = new Pool({
-      connectionString: config.DATABASE_URL
+      connectionString: config.DATABASE_URL,
+      ssl: config.NODE_ENV === 'production'
     });
   }
 
@@ -70,15 +81,21 @@ export class AuditService {
     return AuditService.instance;
   }
 
+  // Log event to database and S3
   public async logEvent(event: Omit<AuditEvent, 'eventId' | 'timestamp'>): Promise<void> {
-    try {
-      const eventId = crypto.randomUUID();
-      const timestamp = new Date();
+    const eventId = uuidv4();
+    const timestamp = new Date();
+    const fullEvent: AuditEvent = {
+      ...event,
+      eventId,
+      timestamp
+    };
 
+    try {
       // Log to database
       await this.pool.query(
         `INSERT INTO audit_logs (
-          event_id, event_type, user_id, ip_address, user_agent,
+          event_id, event_type, user_id, ip_address, user_agent, 
           details, timestamp, severity
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
         [
@@ -94,116 +111,152 @@ export class AuditService {
       );
 
       // Cache recent events in Redis
-      await this.cacheEvent(eventId, { ...event, eventId, timestamp });
+      await this.cacheEvent(fullEvent);
 
-      // Log to monitoring service
-      this.logToMonitoring(event);
+      // Store in S3 for immutable audit trail
+      await this.storeInS3(fullEvent);
+
+      // Log to monitoring service if severity is high or critical
+      if (['high', 'critical'].includes(event.severity)) {
+        await this.logToMonitoring(fullEvent);
+      }
 
       // Check for suspicious patterns
-      await this.checkSuspiciousPatterns(event);
+      await this.checkSuspiciousPatterns(fullEvent);
+
     } catch (error) {
       logger.error('Failed to log audit event', {
         error: error.message,
-        event
+        eventId,
+        eventType: event.eventType
       });
+      throw error;
     }
   }
 
-  private async cacheEvent(eventId: string, event: AuditEvent): Promise<void> {
+  // Cache recent events in Redis
+  private async cacheEvent(event: AuditEvent): Promise<void> {
     const key = `audit:recent:${event.userId || 'system'}`;
-    await redis.lpush(key, JSON.stringify(event));
-    await redis.ltrim(key, 0, 99); // Keep last 100 events
-    await redis.expire(key, 86400); // Expire after 24 hours
-  }
-
-  private logToMonitoring(event: AuditEvent): void {
-    // Log to Sentry for errors
-    if (event.severity === 'ERROR' || event.severity === 'CRITICAL') {
-      logger.error('Audit event', {
-        eventType: event.eventType,
-        userId: event.userId,
-        details: event.details,
-        severity: event.severity
+    try {
+      await redis.lpush(key, JSON.stringify(event));
+      await redis.ltrim(key, 0, 99); // Keep last 100 events
+      await redis.expire(key, this.CACHE_TTL);
+    } catch (error) {
+      logger.error('Failed to cache audit event', {
+        error: error.message,
+        eventId: event.eventId
       });
     }
-
-    // Log to CloudWatch
-    logger.info('Audit event', {
-      eventType: event.eventType,
-      userId: event.userId,
-      severity: event.severity
-    });
   }
 
+  // Store event in S3 for immutable audit trail
+  private async storeInS3(event: AuditEvent): Promise<void> {
+    const key = `audit-logs/${event.timestamp.getFullYear()}/${event.timestamp.getMonth() + 1}/${event.eventId}.json`;
+    
+    try {
+      await s3.putObject({
+        Bucket: config.AUDIT_BUCKET,
+        Key: key,
+        Body: JSON.stringify(event),
+        ContentType: 'application/json',
+        ServerSideEncryption: 'AES256',
+        Metadata: {
+          'event-type': event.eventType,
+          'severity': event.severity,
+          'user-id': event.userId || 'system'
+        }
+      }).promise();
+    } catch (error) {
+      logger.error('Failed to store audit event in S3', {
+        error: error.message,
+        eventId: event.eventId
+      });
+    }
+  }
+
+  // Log to monitoring service
+  private async logToMonitoring(event: AuditEvent): Promise<void> {
+    try {
+      // Implement your monitoring service integration here
+      // Example: CloudWatch, Datadog, etc.
+      logger.warn('High severity audit event', {
+        eventId: event.eventId,
+        eventType: event.eventType,
+        severity: event.severity,
+        details: event.details
+      });
+    } catch (error) {
+      logger.error('Failed to log to monitoring service', {
+        error: error.message,
+        eventId: event.eventId
+      });
+    }
+  }
+
+  // Check for suspicious patterns in recent events
   private async checkSuspiciousPatterns(event: AuditEvent): Promise<void> {
     if (!event.userId) return;
 
-    const recentEvents = await this.getRecentEvents(event.userId);
-    const suspiciousPatterns = this.detectSuspiciousPatterns(recentEvents);
+    try {
+      const recentEvents = await this.getRecentEvents(event.userId);
+      
+      // Check for multiple failed login attempts
+      const failedLogins = recentEvents.filter(e => 
+        e.eventType === AuditEventType.USER_LOGIN && 
+        e.details.status === 'failed'
+      );
 
-    if (suspiciousPatterns.length > 0) {
-      await this.logEvent({
-        eventType: AuditEventType.SUSPICIOUS_ACTIVITY,
-        userId: event.userId,
-        ipAddress: event.ipAddress,
-        userAgent: event.userAgent,
-        details: {
-          patterns: suspiciousPatterns,
-          triggerEvent: event
-        },
-        severity: 'WARNING'
+      if (failedLogins.length >= 5) {
+        await this.logEvent({
+          eventType: AuditEventType.SECURITY_ALERT,
+          userId: event.userId,
+          ipAddress: event.ipAddress,
+          userAgent: event.userAgent,
+          details: {
+            type: 'multiple_failed_logins',
+            count: failedLogins.length
+          },
+          severity: 'high'
+        });
+      }
+
+      // Check for rapid transactions
+      const recentTransactions = recentEvents.filter(e => 
+        e.eventType === AuditEventType.TRANSACTION_CREATE &&
+        e.timestamp > new Date(Date.now() - 5 * 60 * 1000) // Last 5 minutes
+      );
+
+      if (recentTransactions.length >= 10) {
+        await this.logEvent({
+          eventType: AuditEventType.SECURITY_ALERT,
+          userId: event.userId,
+          ipAddress: event.ipAddress,
+          userAgent: event.userAgent,
+          details: {
+            type: 'rapid_transactions',
+            count: recentTransactions.length
+          },
+          severity: 'high'
+        });
+      }
+
+    } catch (error) {
+      logger.error('Failed to check suspicious patterns', {
+        error: error.message,
+        userId: event.userId
       });
     }
   }
 
-  private async getRecentEvents(userId: string): Promise<AuditEvent[]> {
-    const key = `audit:recent:${userId}`;
-    const events = await redis.lrange(key, 0, -1);
-    return events.map(event => JSON.parse(event));
-  }
-
-  private detectSuspiciousPatterns(events: AuditEvent[]): string[] {
-    const patterns: string[] = [];
-
-    // Check for rapid login attempts
-    const loginAttempts = events.filter(
-      e => e.eventType === AuditEventType.USER_LOGIN
-    );
-    if (loginAttempts.length > 5) {
-      patterns.push('Multiple login attempts');
-    }
-
-    // Check for failed transactions
-    const failedTransactions = events.filter(
-      e => e.eventType === AuditEventType.TRANSACTION_FAIL
-    );
-    if (failedTransactions.length > 3) {
-      patterns.push('Multiple failed transactions');
-    }
-
-    // Check for KYC rejections
-    const kycRejections = events.filter(
-      e => e.eventType === AuditEventType.KYC_REJECTION
-    );
-    if (kycRejections.length > 2) {
-      patterns.push('Multiple KYC rejections');
-    }
-
-    return patterns;
-  }
-
-  public async getAuditTrail(
-    userId: string,
-    startDate: Date,
-    endDate: Date
-  ): Promise<AuditEvent[]> {
+  // Get recent events for a user
+  public async getRecentEvents(userId: string): Promise<AuditEvent[]> {
     try {
       const result = await this.pool.query(
         `SELECT * FROM audit_logs 
          WHERE user_id = $1 
-         AND timestamp BETWEEN $2 AND $3
-         ORDER BY timestamp DESC`,
-        [userId, startDate, endDate]
+         ORDER BY timestamp DESC 
+         LIMIT 100`,
+        [userId]
       );
 
       return result.rows.map(row => ({
@@ -211,26 +264,33 @@ export class AuditService {
         details: JSON.parse(row.details)
       }));
     } catch (error) {
-      logger.error('Failed to get audit trail', {
+      logger.error('Failed to get recent events', {
         error: error.message,
         userId
       });
-      throw error;
+      return [];
     }
   }
 
+  // Get system events
   public async getSystemEvents(
     startDate: Date,
-    endDate: Date
+    endDate: Date,
+    severity?: string
   ): Promise<AuditEvent[]> {
     try {
-      const result = await this.pool.query(
-        `SELECT * FROM audit_logs 
-         WHERE user_id IS NULL 
-         AND timestamp BETWEEN $1 AND $2
-         ORDER BY timestamp DESC`,
-        [startDate, endDate]
-      );
+      const query = `
+        SELECT * FROM audit_logs 
+        WHERE user_id IS NULL 
+        AND timestamp BETWEEN $1 AND $2
+        ${severity ? 'AND severity = $3' : ''}
+        ORDER BY timestamp DESC
+      `;
+
+      const params = [startDate, endDate];
+      if (severity) params.push(severity);
+
+      const result = await this.pool.query(query, params);
 
       return result.rows.map(row => ({
         ...row,
@@ -238,9 +298,12 @@ export class AuditService {
       }));
     } catch (error) {
       logger.error('Failed to get system events', {
-        error: error.message
+        error: error.message,
+        startDate,
+        endDate,
+        severity
       });
-      throw error;
+      return [];
     }
   }
 } 

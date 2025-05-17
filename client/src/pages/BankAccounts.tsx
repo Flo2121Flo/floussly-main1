@@ -114,7 +114,7 @@ export default function BankAccounts() {
     queryKey: ['bankAccounts'],
     queryFn: async () => {
       const response = await apiRequest('GET', `/api/bank-accounts?userId=${userId}`);
-      setDataIsLoading(false);
+        setDataIsLoading(false);
       return response.json().then(data => data.success ? data.accounts : []);
     },
   });
@@ -429,8 +429,8 @@ export default function BankAccounts() {
           setSelectedAccount(undefined);
           setIsFormOpen(true);
         }}>
-          {t("bankAccounts.addAccount")}
-        </Button>
+              {t("bankAccounts.addAccount")}
+            </Button>
       </div>
 
       {/* Tabs for filtering accounts */}

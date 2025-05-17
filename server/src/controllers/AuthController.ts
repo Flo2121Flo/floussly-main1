@@ -2,12 +2,14 @@ import { Request, Response } from 'express';
 import { AuthService } from '../services/AuthService';
 import { User } from '../models/User';
 import { logger } from '../utils/logger';
-import { createHash } from 'crypto';
+import bcrypt from 'bcrypt';
 import { redis } from '../utils/redis';
+import { validateEmail, validatePassword, validatePhone } from '../utils/validators';
 
 export class AuthController {
   private static instance: AuthController;
   private readonly authService: AuthService;
+  private readonly SALT_ROUNDS = 12;
 
   private constructor() {
     this.authService = AuthService.getInstance();
@@ -24,6 +26,24 @@ export class AuthController {
     try {
       const { email, password, phone, name } = req.body;
 
+      // Input validation
+      if (!validateEmail(email)) {
+        res.status(400).json({ error: 'Invalid email format' });
+        return;
+      }
+
+      if (!validatePassword(password)) {
+        res.status(400).json({ 
+          error: 'Password must be at least 8 characters long and contain uppercase, lowercase, number and special character' 
+        });
+        return;
+      }
+
+      if (!validatePhone(phone)) {
+        res.status(400).json({ error: 'Invalid phone number format' });
+        return;
+      }
+
       // Check if user exists
       const existingUser = await User.findOne({ email });
       if (existingUser) {
@@ -31,23 +51,32 @@ export class AuthController {
         return;
       }
 
-      // Create user
-      const hashedPassword = createHash('sha256').update(password).digest('hex');
+      // Create user with secure password hashing
+      const hashedPassword = await bcrypt.hash(password, this.SALT_ROUNDS);
       const user = await User.create({
         email,
         password: hashedPassword,
         phone,
         name,
         tier: 'STANDARD',
-        mfaEnabled: false
+        mfaEnabled: false,
+        lastLoginAttempt: new Date(),
+        failedLoginAttempts: 0
       });
 
-      // Generate token
+      // Generate token with proper expiration
       const token = this.authService.generateToken(user);
+
+      // Set secure cookie
+      res.cookie('auth_token', token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        maxAge: 24 * 60 * 60 * 1000 // 24 hours
+      });
 
       res.status(201).json({
         message: 'Registration successful',
-        token,
         user: {
           id: user.id,
           email: user.email,
@@ -56,7 +85,11 @@ export class AuthController {
         }
       });
     } catch (error) {
-      logger.error('Registration error', { error: error.message });
+      logger.error('Registration error', { 
+        error: error.message,
+        stack: error.stack,
+        timestamp: new Date().toISOString()
+      });
       res.status(500).json({ error: 'Registration failed' });
     }
   }
