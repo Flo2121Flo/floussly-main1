@@ -5,14 +5,20 @@ import { AppError } from '../utils/error';
 import { logger } from '../utils/logger';
 import { Redis } from 'ioredis';
 import { FraudDetectionService } from "./fraud";
+import { OpenAI } from 'openai';
+import { createHash } from 'crypto';
 
 const prisma = new PrismaClient();
 const kms = new KMS({ region: config.aws.region });
 const redis = new Redis(config.redis.url);
+const openai = new OpenAI({ apiKey: config.openai.apiKey });
 
 export class TransactionService {
+  private static readonly CATEGORY_CACHE_TTL = 24 * 60 * 60; // 24 hours
+  private static readonly PATTERN_CACHE_TTL = 7 * 24 * 60 * 60; // 7 days
+
   /**
-   * Create a new transaction with fraud detection
+   * Create a new transaction with enhanced fraud detection and AI categorization
    */
   static async createTransaction(data: {
     senderId: string;
@@ -22,11 +28,13 @@ export class TransactionService {
     ip: string;
     deviceFingerprint: string;
     location?: { lat: number; lng: number };
+    description?: string;
+    metadata?: Record<string, any>;
   }): Promise<any> {
-    const { senderId, receiverId, amount, type, ip, deviceFingerprint, location } = data;
+    const { senderId, receiverId, amount, type, ip, deviceFingerprint, location, description, metadata } = data;
 
     try {
-      // Check for fraud
+      // Enhanced fraud detection
       const fraudCheck = await FraudDetectionService.checkTransactionPatterns({
         userId: senderId,
         amount,
@@ -68,6 +76,14 @@ export class TransactionService {
         throw new AppError("Insufficient funds", 400, "INSUFFICIENT_FUNDS");
       }
 
+      // AI-powered transaction categorization
+      const category = await this.categorizeTransaction({
+        amount,
+        type,
+        description,
+        metadata,
+      });
+
       // Create transaction with atomic operation
       const transaction = await prisma.$transaction(async (prisma) => {
         // Create transaction record
@@ -78,10 +94,12 @@ export class TransactionService {
             amount,
             type,
             status: "PENDING",
+            category,
             metadata: {
               ip,
               deviceFingerprint,
               location,
+              ...metadata,
             },
           },
         });
@@ -126,6 +144,7 @@ export class TransactionService {
               amount,
               type,
               status: "PENDING",
+              category,
             },
           },
         });
@@ -133,8 +152,9 @@ export class TransactionService {
         return newTransaction;
       });
 
-      // Cache transaction
+      // Cache transaction and update patterns
       await this.cacheTransaction(transaction);
+      await this.updateTransactionPatterns(transaction);
 
       return transaction;
     } catch (error) {
@@ -147,6 +167,132 @@ export class TransactionService {
       });
       throw error;
     }
+  }
+
+  /**
+   * AI-powered transaction categorization
+   */
+  private static async categorizeTransaction(data: {
+    amount: number;
+    type: string;
+    description?: string;
+    metadata?: Record<string, any>;
+  }): Promise<string> {
+    const { amount, type, description, metadata } = data;
+
+    try {
+      // Check cache first
+      const cacheKey = this.generateCategoryCacheKey(data);
+      const cachedCategory = await redis.get(cacheKey);
+      if (cachedCategory) {
+        return cachedCategory;
+      }
+
+      // Prepare context for AI
+      const context = {
+        amount,
+        type,
+        description,
+        metadata,
+        timestamp: new Date().toISOString(),
+      };
+
+      // Get AI categorization
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4",
+        messages: [
+          {
+            role: "system",
+            content: "You are a financial transaction categorization expert. Categorize the transaction into one of these categories: FOOD, TRANSPORT, SHOPPING, BILLS, ENTERTAINMENT, HEALTH, TRAVEL, EDUCATION, TRANSFER, OTHER. Consider the amount, type, and description in your decision."
+          },
+          {
+            role: "user",
+            content: JSON.stringify(context)
+          }
+        ],
+        temperature: 0.3,
+        max_tokens: 10
+      });
+
+      const category = completion.choices[0].message.content?.trim().toUpperCase() || 'OTHER';
+
+      // Cache the result
+      await redis.set(cacheKey, category, 'EX', this.CATEGORY_CACHE_TTL);
+
+      return category;
+    } catch (error) {
+      logger.error("Transaction categorization failed:", error);
+      return 'OTHER';
+    }
+  }
+
+  /**
+   * Update transaction patterns for fraud detection
+   */
+  private static async updateTransactionPatterns(transaction: any): Promise<void> {
+    try {
+      const patternKey = `user:${transaction.senderId}:patterns`;
+      const patterns = await redis.get(patternKey) || '[]';
+      const userPatterns = JSON.parse(patterns);
+
+      // Add new pattern
+      userPatterns.push({
+        amount: transaction.amount,
+        type: transaction.type,
+        category: transaction.category,
+        timestamp: transaction.createdAt,
+      });
+
+      // Keep only last 100 patterns
+      const recentPatterns = userPatterns.slice(-100);
+
+      // Update cache
+      await redis.set(patternKey, JSON.stringify(recentPatterns), 'EX', this.PATTERN_CACHE_TTL);
+
+      // Update ML model if needed
+      if (userPatterns.length % 10 === 0) {
+        await this.updateMLModel(transaction.senderId, recentPatterns);
+      }
+    } catch (error) {
+      logger.error("Failed to update transaction patterns:", error);
+    }
+  }
+
+  /**
+   * Update ML model with new patterns
+   */
+  private static async updateMLModel(userId: string, patterns: any[]): Promise<void> {
+    try {
+      // Prepare training data
+      const trainingData = patterns.map(pattern => ({
+        amount: pattern.amount,
+        type: pattern.type,
+        category: pattern.category,
+        hour: new Date(pattern.timestamp).getHours(),
+        day: new Date(pattern.timestamp).getDay(),
+      }));
+
+      // Update model (implementation depends on your ML infrastructure)
+      // This is a placeholder for the actual ML model update logic
+      logger.info("ML model update triggered", { userId, patternCount: patterns.length });
+    } catch (error) {
+      logger.error("ML model update failed:", error);
+    }
+  }
+
+  /**
+   * Generate cache key for transaction category
+   */
+  private static generateCategoryCacheKey(data: {
+    amount: number;
+    type: string;
+    description?: string;
+    metadata?: Record<string, any>;
+  }): string {
+    const hash = createHash('sha256')
+      .update(JSON.stringify(data))
+      .digest('hex');
+    return `category:${hash}`;
   }
 
   /**

@@ -1,16 +1,25 @@
 import { Request, Response, NextFunction } from 'express';
-import { CognitoIdentityProvider } from '@aws-sdk/client-cognito-identity-provider';
-import { config } from '../config';
-import { logger, logSecurityEvent } from '../utils/logger';
-import { AuthenticationError, AuthorizationError } from '../utils/error';
+import { AuthService } from '../services/auth';
+import { AppError } from '../utils/errors';
+import { rateLimit } from 'express-rate-limit';
+import { logger } from '../utils/logger';
+import jwt from 'jsonwebtoken';
+import { Redis } from 'ioredis';
+import { PrismaClient } from '@prisma/client';
 
-// Initialize Cognito client
-const cognito = new CognitoIdentityProvider({
-  region: config.aws.region,
-  credentials: {
-    accessKeyId: config.aws.accessKeyId,
-    secretAccessKey: config.aws.secretAccessKey,
-  },
+// Initialize Prisma client
+const prisma = new PrismaClient();
+
+// Initialize Redis client
+const redis = new Redis();
+
+// Rate limiting configuration
+export const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // limit each IP to 5 requests per windowMs
+  message: 'Too many authentication attempts, please try again later',
+  standardHeaders: true,
+  legacyHeaders: false,
 });
 
 // Extend Express Request type to include user
@@ -18,192 +27,119 @@ declare global {
   namespace Express {
     interface Request {
       user?: {
-        sub: string;
-        email: string;
-        phoneNumber?: string;
-        groups?: string[];
+        id: string;
+        sessionId: string;
       };
     }
   }
 }
 
-// Authentication middleware
-export const authenticate = async (req: Request, res: Response, next: NextFunction) => {
+// Token validation middleware
+export const requireAuth = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const authHeader = req.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      throw new AuthenticationError('No token provided');
+      throw new AppError('No token provided', 401);
     }
 
     const token = authHeader.split(' ')[1];
+    const authService = AuthService.getInstance();
 
-    // Verify token with Cognito
-    const response = await cognito.getUser({
-      AccessToken: token,
-    });
-
-    if (!response.Username) {
-      throw new AuthenticationError('Invalid token');
+    const isValid = await authService.validateToken(token, req);
+    if (!isValid) {
+      throw new AppError('Invalid or expired token', 401);
     }
 
-    // Get user groups
-    const groupsResponse = await cognito.adminListGroupsForUser({
-      UserPoolId: config.aws.cognito.userPoolId,
-      Username: response.Username,
-    });
-
-    // Set user info in request
+    // Decode token to get user info
+    const decoded = jwt.decode(token) as any;
     req.user = {
-      sub: response.Username,
-      email: response.UserAttributes?.find(attr => attr.Name === 'email')?.Value || '',
-      phoneNumber: response.UserAttributes?.find(attr => attr.Name === 'phone_number')?.Value,
-      groups: groupsResponse.Groups?.map(group => group.GroupName) || [],
+      id: decoded.userId,
+      sessionId: decoded.sessionId
     };
 
     next();
   } catch (error) {
-    logSecurityEvent('AUTHENTICATION_FAILED', {
+    logger.error('Authentication error', { 
       path: req.path,
       ip: req.ip,
-      error: error instanceof Error ? error.message : 'Unknown error',
+      error: error instanceof Error ? error.message : 'Unknown error'
     });
-    next(new AuthenticationError('Authentication failed'));
+    
+    if (error instanceof AppError) {
+      res.status(error.statusCode).json({ error: error.message });
+    } else {
+      res.status(401).json({ error: 'Authentication failed' });
+    }
   }
 };
 
-// Role-based authorization middleware
-export const authorize = (roles: string[]) => {
-  return (req: Request, res: Response, next: NextFunction) => {
-    if (!req.user) {
-      return next(new AuthenticationError('User not authenticated'));
-    }
+// Role-based access control middleware
+export const requireRole = (roles: string[]) => {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      if (!req.user) {
+        throw new AppError('Authentication required', 401);
+      }
 
-    const hasRole = roles.some(role => req.user?.groups?.includes(role));
-
-    if (!hasRole) {
-      logSecurityEvent('AUTHORIZATION_FAILED', {
-        path: req.path,
-        ip: req.ip,
-        userId: req.user.sub,
-        requiredRoles: roles,
-        userRoles: req.user.groups,
+      const user = await prisma.user.findUnique({
+        where: { id: req.user.id },
+        select: { role: true }
       });
-      return next(new AuthorizationError('Insufficient permissions'));
-    }
 
-    next();
+      if (!user || !roles.includes(user.role)) {
+        throw new AppError('Insufficient permissions', 403);
+      }
+
+      next();
+    } catch (error) {
+      logger.error('Authorization error', {
+        path: req.path,
+        userId: req.user?.id,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+
+      if (error instanceof AppError) {
+        res.status(error.statusCode).json({ error: error.message });
+      } else {
+        res.status(403).json({ error: 'Authorization failed' });
+      }
+    }
   };
 };
 
-// Optional authentication middleware
-export const optionalAuth = async (req: Request, res: Response, next: NextFunction) => {
+// Session validation middleware
+export const validateSession = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const authHeader = req.headers.authorization;
-
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return next();
+    if (!req.user?.sessionId) {
+      throw new AppError('Invalid session', 401);
     }
 
-    const token = authHeader.split(' ')[1];
-
-    // Verify token with Cognito
-    const response = await cognito.getUser({
-      AccessToken: token,
-    });
-
-    if (!response.Username) {
-      return next();
+    const sessionData = await redis.get(`session:${req.user.sessionId}`);
+    if (!sessionData) {
+      throw new AppError('Session expired', 401);
     }
 
-    // Get user groups
-    const groupsResponse = await cognito.adminListGroupsForUser({
-      UserPoolId: config.aws.cognito.userPoolId,
-      Username: response.Username,
-    });
+    const { lastActivity } = JSON.parse(sessionData);
+    const inactiveTime = Date.now() - lastActivity;
 
-    // Set user info in request
-    req.user = {
-      sub: response.Username,
-      email: response.UserAttributes?.find(attr => attr.Name === 'email')?.Value || '',
-      phoneNumber: response.UserAttributes?.find(attr => attr.Name === 'phone_number')?.Value,
-      groups: groupsResponse.Groups?.map(group => group.GroupName) || [],
-    };
+    // Force re-authentication after 24 hours of inactivity
+    if (inactiveTime > 24 * 60 * 60 * 1000) {
+      throw new AppError('Session expired due to inactivity', 401);
+    }
 
     next();
   } catch (error) {
-    // Log error but don't fail the request
-    logger.warn('Optional authentication failed', {
+    logger.error('Session validation error', {
       path: req.path,
-      ip: req.ip,
-      error: error instanceof Error ? error.message : 'Unknown error',
-    });
-    next();
-  }
-};
-
-// Verify phone number middleware
-export const verifyPhoneNumber = async (req: Request, res: Response, next: NextFunction) => {
-  if (!req.user) {
-    return next(new AuthenticationError('User not authenticated'));
-  }
-
-  if (!req.user.phoneNumber) {
-    return next(new AuthorizationError('Phone number verification required'));
-  }
-
-  try {
-    // Check if phone number is verified in Cognito
-    const response = await cognito.adminGetUser({
-      UserPoolId: config.aws.cognito.userPoolId,
-      Username: req.user.sub,
+      userId: req.user?.id,
+      error: error instanceof Error ? error.message : 'Unknown error'
     });
 
-    const phoneVerified = response.UserAttributes?.find(
-      attr => attr.Name === 'phone_number_verified'
-    )?.Value === 'true';
-
-    if (!phoneVerified) {
-      return next(new AuthorizationError('Phone number not verified'));
+    if (error instanceof AppError) {
+      res.status(error.statusCode).json({ error: error.message });
+    } else {
+      res.status(401).json({ error: 'Session validation failed' });
     }
-
-    next();
-  } catch (error) {
-    logger.error('Phone verification check failed', {
-      userId: req.user.sub,
-      error: error instanceof Error ? error.message : 'Unknown error',
-    });
-    next(new AuthorizationError('Phone verification check failed'));
-  }
-};
-
-// Verify email middleware
-export const verifyEmail = async (req: Request, res: Response, next: NextFunction) => {
-  if (!req.user) {
-    return next(new AuthenticationError('User not authenticated'));
-  }
-
-  try {
-    // Check if email is verified in Cognito
-    const response = await cognito.adminGetUser({
-      UserPoolId: config.aws.cognito.userPoolId,
-      Username: req.user.sub,
-    });
-
-    const emailVerified = response.UserAttributes?.find(
-      attr => attr.Name === 'email_verified'
-    )?.Value === 'true';
-
-    if (!emailVerified) {
-      return next(new AuthorizationError('Email not verified'));
-    }
-
-    next();
-  } catch (error) {
-    logger.error('Email verification check failed', {
-      userId: req.user.sub,
-      error: error instanceof Error ? error.message : 'Unknown error',
-    });
-    next(new AuthorizationError('Email verification check failed'));
   }
 }; 

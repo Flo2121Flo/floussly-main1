@@ -5,9 +5,14 @@ import logger from '../utils/logger';
 import { prisma } from '../lib/prisma';
 import { redis } from '../lib/redis';
 import { AppError } from '../utils/errors';
+import { v4 as uuidv4 } from 'uuid';
+import { createHash } from 'crypto';
 
 export class AuthService {
   private static instance: AuthService;
+  private readonly MAX_LOGIN_ATTEMPTS = 5;
+  private readonly LOCKOUT_DURATION = 900; // 15 minutes
+  private readonly TOKEN_ROTATION_INTERVAL = 3600; // 1 hour
 
   private constructor() {}
 
@@ -16,6 +21,37 @@ export class AuthService {
       AuthService.instance = new AuthService();
     }
     return AuthService.instance;
+  }
+
+  private generateDeviceFingerprint(req: any): string {
+    const components = [
+      req.headers['user-agent'],
+      req.headers['accept-language'],
+      req.ip,
+      req.headers['sec-ch-ua-platform']
+    ].filter(Boolean);
+    
+    return createHash('sha256')
+      .update(components.join('|'))
+      .digest('hex');
+  }
+
+  private async checkLoginAttempts(userId: string): Promise<void> {
+    const attempts = await redis.get(`login_attempts:${userId}`);
+    if (attempts && parseInt(attempts) >= this.MAX_LOGIN_ATTEMPTS) {
+      throw new AppError('Account temporarily locked. Please try again later.', 429);
+    }
+  }
+
+  private async incrementLoginAttempts(userId: string): Promise<void> {
+    const attempts = await redis.incr(`login_attempts:${userId}`);
+    if (attempts === 1) {
+      await redis.expire(`login_attempts:${userId}`, this.LOCKOUT_DURATION);
+    }
+  }
+
+  private async resetLoginAttempts(userId: string): Promise<void> {
+    await redis.del(`login_attempts:${userId}`);
   }
 
   // Register new user
@@ -50,7 +86,7 @@ export class AuthService {
   }
 
   // Login user
-  async login(credentials: { email: string; password: string }) {
+  async login(credentials: { email: string; password: string }, req: any) {
     try {
       const user = await prisma.user.findUnique({
         where: { email: credentials.email },
@@ -60,15 +96,41 @@ export class AuthService {
         throw new AppError('Invalid credentials', 401);
       }
 
+      await this.checkLoginAttempts(user.id);
+
       const isValidPassword = await this.verifyPassword(credentials.password, user.password);
       if (!isValidPassword) {
+        await this.incrementLoginAttempts(user.id);
         throw new AppError('Invalid credentials', 401);
       }
 
-      const token = this.generateToken(user.id);
-      await redis.set(`token:${token}`, user.id, 'EX', 3600); // 1 hour expiry
+      await this.resetLoginAttempts(user.id);
 
-      return { token, user };
+      const deviceFingerprint = this.generateDeviceFingerprint(req);
+      const sessionId = uuidv4();
+
+      const { accessToken, refreshToken } = await this.generateTokens(user.id, sessionId, deviceFingerprint);
+
+      // Store session information
+      await redis.setex(
+        `session:${sessionId}`,
+        this.TOKEN_ROTATION_INTERVAL,
+        JSON.stringify({
+          userId: user.id,
+          deviceFingerprint,
+          lastActivity: Date.now()
+        })
+      );
+
+      return { 
+        accessToken, 
+        refreshToken, 
+        user: {
+          id: user.id,
+          email: user.email,
+          role: user.role
+        }
+      };
     } catch (error) {
       logger.error('Failed to login user:', error);
       throw error;
@@ -103,38 +165,52 @@ export class AuthService {
   }
 
   // Logout user
-  async logout(token: string) {
+  async logout(sessionId: string) {
     try {
-      await redis.del(`token:${token}`);
+      await redis.del(`refresh_token:${sessionId}`);
+      await redis.del(`session:${sessionId}`);
     } catch (error) {
-      logger.error('Failed to logout user:', error);
+      logger.error('Failed to logout:', error);
       throw error;
     }
   }
 
   // Refresh token
-  async refreshToken(token: string) {
+  async refreshToken(refreshToken: string, req: any) {
     try {
-      const decoded = this.verifyToken(token);
-      if (!decoded) {
-        throw new AppError('Invalid token', 401);
+      const decoded = jwt.verify(refreshToken, config.jwt.secret) as any;
+      
+      if (decoded.type !== 'refresh') {
+        throw new AppError('Invalid token type', 401);
       }
 
-      const user = await prisma.user.findUnique({
-        where: { id: decoded.id },
-      });
-
-      if (!user) {
-        throw new AppError('User not found', 404);
+      const deviceFingerprint = this.generateDeviceFingerprint(req);
+      if (decoded.deviceFingerprint !== deviceFingerprint) {
+        throw new AppError('Invalid device', 401);
       }
 
-      const newToken = this.generateToken(user.id);
-      await redis.set(`token:${newToken}`, user.id, 'EX', 3600);
+      const sessionData = await redis.get(`refresh_token:${decoded.sessionId}`);
+      if (!sessionData) {
+        throw new AppError('Session expired', 401);
+      }
 
-      return { newToken };
+      const { token: storedToken } = JSON.parse(sessionData);
+      if (storedToken !== refreshToken) {
+        throw new AppError('Token has been revoked', 401);
+      }
+
+      // Generate new tokens
+      const newSessionId = uuidv4();
+      const tokens = await this.generateTokens(decoded.userId, newSessionId, deviceFingerprint);
+
+      // Invalidate old session
+      await redis.del(`refresh_token:${decoded.sessionId}`);
+      await redis.del(`session:${decoded.sessionId}`);
+
+      return tokens;
     } catch (error) {
       logger.error('Failed to refresh token:', error);
-      throw error;
+      throw new AppError('Invalid refresh token', 401);
     }
   }
 
@@ -264,6 +340,77 @@ export class AuthService {
     } catch (error) {
       logger.error('Failed to verify email verification token:', error);
       return null;
+    }
+  }
+
+  private async generateTokens(userId: string, sessionId: string, deviceFingerprint: string) {
+    const accessToken = jwt.sign(
+      { 
+        userId,
+        sessionId,
+        deviceFingerprint,
+        type: 'access'
+      },
+      config.jwt.secret,
+      { expiresIn: '15m' }
+    );
+
+    const refreshToken = jwt.sign(
+      { 
+        userId,
+        sessionId,
+        deviceFingerprint,
+        type: 'refresh'
+      },
+      config.jwt.secret,
+      { expiresIn: '7d' }
+    );
+
+    // Store refresh token with session info
+    await redis.setex(
+      `refresh_token:${sessionId}`,
+      7 * 24 * 60 * 60, // 7 days
+      JSON.stringify({
+        token: refreshToken,
+        deviceFingerprint,
+        createdAt: Date.now()
+      })
+    );
+
+    return { accessToken, refreshToken };
+  }
+
+  async validateToken(token: string, req: any): Promise<boolean> {
+    try {
+      const decoded = jwt.verify(token, config.jwt.secret) as any;
+      
+      if (decoded.type !== 'access') {
+        return false;
+      }
+
+      const deviceFingerprint = this.generateDeviceFingerprint(req);
+      if (decoded.deviceFingerprint !== deviceFingerprint) {
+        return false;
+      }
+
+      const sessionData = await redis.get(`session:${decoded.sessionId}`);
+      if (!sessionData) {
+        return false;
+      }
+
+      // Update last activity
+      await redis.setex(
+        `session:${decoded.sessionId}`,
+        this.TOKEN_ROTATION_INTERVAL,
+        JSON.stringify({
+          ...JSON.parse(sessionData),
+          lastActivity: Date.now()
+        })
+      );
+
+      return true;
+    } catch (error) {
+      return false;
     }
   }
 } 
