@@ -5,7 +5,17 @@ import morgan from 'morgan';
 import compression from 'compression';
 import { config } from './config';
 import { logger, stream } from './utils/logger';
-import { errorHandler, notFoundHandler } from './utils/error';
+import { enhancedErrorHandler, asyncHandler } from './utils/enhanced-error';
+import { CircuitBreakerRegistry } from './utils/circuit-breaker';
+import { CacheService } from './services/cache-service';
+import { MetricsService } from './services/metrics-service';
+import {
+  monitoringMiddleware,
+  errorMonitoringMiddleware,
+  databaseMonitoringMiddleware,
+  cacheMonitoringMiddleware,
+  businessMetricsMiddleware,
+} from './middleware/monitoring';
 import {
   rateLimiter,
   corsMiddleware,
@@ -30,6 +40,12 @@ import messageRoutes from './routes/message';
 import qrCodeRoutes from './routes/qr-code';
 import agentRoutes from './routes/agent';
 import adminRoutes from './routes/admin';
+import { healthRoutes } from './routes/health';
+import { moroccanBankingRoutes } from './routes/moroccan-banking';
+import { walletRoutes } from './routes/wallets';
+import { daretRoutes } from './routes/darets';
+import { merchantRoutes } from './routes/merchants';
+import { notificationRoutes } from './routes/notifications';
 
 // Create Express app
 const app = express();
@@ -42,6 +58,10 @@ const redis = createClient({
 redis.on('error', (error) => {
   logger.error('Redis client error:', error);
 });
+
+// Initialize services
+const cacheService = CacheService.getInstance();
+const metricsService = MetricsService.getInstance();
 
 // Initialize monitoring service
 const monitoringService = new MonitoringService(redis);
@@ -57,6 +77,12 @@ app.use(express.urlencoded({ extended: true }));
 app.use(compression());
 app.use(morgan('combined', { stream }));
 
+// Apply monitoring middleware
+app.use(monitoringMiddleware(metricsService));
+app.use(databaseMonitoringMiddleware(metricsService));
+app.use(cacheMonitoringMiddleware(metricsService));
+app.use(businessMetricsMiddleware(metricsService));
+
 // Request logging
 app.use(requestLogger);
 
@@ -65,12 +91,24 @@ app.use(requestMonitoring(monitoringService));
 
 // Health check endpoint
 app.get('/health', (req, res) => {
-  res.status(200).json({
+  res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
-    environment: config.env,
+    environment: process.env.NODE_ENV,
     version: process.env.npm_package_version,
   });
+});
+
+// Metrics endpoint
+app.get('/metrics', async (req, res) => {
+  try {
+    const metrics = await metricsService.getMetrics();
+    res.set('Content-Type', 'text/plain');
+    res.send(metrics);
+  } catch (error) {
+    logger.error('Failed to get metrics:', error);
+    res.status(500).json({ error: 'Failed to get metrics' });
+  }
 });
 
 // API routes
@@ -83,11 +121,17 @@ app.use('/api/qr-codes', validateApiKey, qrCodeRoutes);
 app.use('/api/agents', validateApiKey, agentRoutes);
 app.use('/api/admin', validateApiKey, adminRoutes);
 app.use('/api/monitoring', monitoringRoutes);
+app.use('/api/health', healthRoutes);
+app.use('/api/banking', moroccanBankingRoutes);
+app.use('/api/wallets', walletRoutes);
+app.use('/api/darets', daretRoutes);
+app.use('/api/merchants', merchantRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 // Error handling
 app.use(errorLogger);
-app.use(notFoundHandler);
-app.use(errorHandler);
+app.use(errorMonitoringMiddleware(metricsService));
+app.use(enhancedErrorHandler);
 
 // Start server
 const PORT = config.port || 3000;
@@ -115,8 +159,24 @@ process.on('SIGTERM', async () => {
   // Close Redis connection
   await redis.quit();
   
+  // Close circuit breakers
+  CircuitBreakerRegistry.getInstance().destroyAll();
+  
   // Close server
   process.exit(0);
+});
+
+process.on('SIGINT', () => {
+  logger.info('SIGINT received. Starting graceful shutdown...');
+  
+  // Close circuit breakers
+  CircuitBreakerRegistry.getInstance().destroyAll();
+  
+  // Close server
+  app.listen().close(() => {
+    logger.info('Server closed');
+    process.exit(0);
+  });
 });
 
 export default app; 

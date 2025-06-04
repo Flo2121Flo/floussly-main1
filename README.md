@@ -1,107 +1,35 @@
-# Floussly - Modern Financial Platform
+# Floussly - Moroccan Fintech Application
 
-Floussly is a comprehensive financial platform that provides secure and efficient money management solutions.
+A modern fintech application built with React, TypeScript, Node.js, and Express, focusing on stability, reliability, and performance.
 
-## 🚀 Features
+## Features
 
-- Secure user authentication and authorization
-- Real-time transaction monitoring
-- AML (Anti-Money Laundering) compliance
-- Multi-currency support
-- Mobile-first responsive design
-- RTL (Right-to-Left) support for Arabic
-- Comprehensive security measures
-- Real-time notifications
-- Transaction history and analytics
+- **Enhanced Error Handling**: Comprehensive error handling system with custom error classes and detailed error logging
+- **Circuit Breaker Pattern**: Robust implementation for external service calls with fallback mechanisms
+- **Advanced Caching**: Redis-based caching system with configurable TTL and cache invalidation strategies
+- **Metrics Collection**: Prometheus integration for collecting and monitoring various metrics
+- **Health Checks**: Detailed health check endpoints for monitoring system status
+- **Security**: Implemented security best practices including rate limiting, CORS, and helmet
+- **Logging**: Structured logging with Winston and CloudWatch integration
 
-## 🛠️ Tech Stack
+## Tech Stack
 
-### Frontend
-- React with TypeScript
-- Tailwind CSS for styling
-- Ant Design for UI components
-- React Query for data fetching
-- React Router for navigation
-- i18next for internationalization
+- **Frontend**: React, TypeScript, Material-UI
+- **Backend**: Node.js, Express, TypeScript
+- **Database**: PostgreSQL
+- **Cache**: Redis
+- **Monitoring**: Prometheus, CloudWatch
+- **Containerization**: Docker
+- **Cloud**: AWS
 
-### Backend
-- Node.js with Express
-- TypeScript
-- PostgreSQL with Prisma ORM
-- Redis for caching and session management
-- JWT for authentication
-- Winston for logging
+## Prerequisites
 
-### Security
-- Content Security Policy (CSP)
-- Rate limiting
-- Input validation and sanitization
-- CSRF protection
-- Secure session management
-- Password encryption
-- 2FA support
+- Node.js >= 14
+- PostgreSQL >= 12
+- Redis >= 6
+- Docker (optional)
 
-## 📁 Project Structure
-
-```
-floussly/
-├── client/                 # Frontend application
-│   ├── src/
-│   │   ├── components/     # Reusable UI components
-│   │   ├── config/         # Configuration files
-│   │   ├── context/        # React context providers
-│   │   ├── hooks/          # Custom React hooks
-│   │   ├── lib/            # Utility functions
-│   │   ├── pages/          # Page components
-│   │   └── i18n/           # Internationalization files
-│   └── public/             # Static assets
-│
-├── server/                 # Backend application
-│   ├── controllers/        # Route controllers
-│   ├── middleware/         # Express middleware
-│   ├── models/             # Database models
-│   ├── routes/             # API routes
-│   ├── services/           # Business logic
-│   ├── utils/              # Utility functions
-│   └── validations/        # Input validation schemas
-│
-├── shared/                 # Shared types and utilities
-├── .github/               # GitHub workflows
-└── deployment/            # Deployment configurations
-```
-
-## 🔒 Security Features
-
-### Authentication & Authorization
-- JWT-based authentication
-- Role-based access control
-- Session management
-- Password policies
-- 2FA support
-
-### Data Protection
-- Input validation and sanitization
-- SQL injection prevention
-- XSS protection
-- CSRF protection
-- Secure storage
-
-### Monitoring & Compliance
-- AML monitoring
-- Transaction pattern detection
-- Suspicious activity alerts
-- Audit logging
-- Rate limiting
-
-## 🚀 Getting Started
-
-### Prerequisites
-- Node.js (v16 or higher)
-- PostgreSQL
-- Redis
-- npm or yarn
-
-### Installation
+## Installation
 
 1. Clone the repository:
 ```bash
@@ -111,65 +39,138 @@ cd floussly
 
 2. Install dependencies:
 ```bash
-# Install root dependencies
+# Install server dependencies
+cd server
 npm install
 
 # Install client dependencies
-cd client
-npm install
-
-# Install server dependencies
-cd ../server
+cd ../client
 npm install
 ```
 
 3. Set up environment variables:
 ```bash
-# Create .env files
-cp .env.example .env
-cp client/.env.example client/.env
+# Server
 cp server/.env.example server/.env
+# Edit server/.env with your configuration
+
+# Client
+cp client/.env.example client/.env
+# Edit client/.env with your configuration
 ```
 
 4. Start the development servers:
 ```bash
-# Start the backend server
+# Start server
 cd server
 npm run dev
 
-# Start the frontend server
+# Start client
 cd ../client
-npm run dev
+npm start
 ```
 
-## 📝 API Documentation
+## Project Structure
 
-The API documentation is available at `/api/docs` when running the server in development mode.
+```
+floussly/
+├── client/                 # React frontend
+├── server/                 # Node.js backend
+│   ├── config/            # Configuration files
+│   ├── middleware/        # Express middleware
+│   ├── routes/            # API routes
+│   ├── services/          # Business logic
+│   ├── utils/             # Utility functions
+│   └── app.ts             # Express application
+└── docker/                # Docker configuration
+```
 
-## 🧪 Testing
+## API Documentation
+
+The API documentation is available at `/api-docs` when running the server.
+
+### Key Endpoints
+
+- `/health` - Health check endpoint
+- `/metrics` - Prometheus metrics endpoint
+- `/api/auth` - Authentication endpoints
+- `/api/users` - User management
+- `/api/transactions` - Transaction management
+- `/api/banking` - Banking integration
+
+## Monitoring
+
+The application includes comprehensive monitoring:
+
+- **Metrics**: Available at `/metrics` endpoint
+- **Health Checks**: Available at `/health` endpoint
+- **Logging**: Structured logs with Winston
+- **Error Tracking**: Enhanced error handling with detailed context
+
+## Security Features
+
+- Rate limiting
+- CORS protection
+- Helmet security headers
+- API key validation
+- Request sanitization
+- Circuit breaker pattern for external services
+
+## Development
+
+### Running Tests
 
 ```bash
-# Run all tests
-npm test
-
-# Run client tests
-cd client
-npm test
-
-# Run server tests
+# Server tests
 cd server
+npm test
+
+# Client tests
+cd ../client
 npm test
 ```
 
-## 🚀 Deployment
+### Code Style
 
-See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed deployment instructions.
+The project uses ESLint and Prettier for code formatting:
 
-## 📄 License
+```bash
+# Server
+cd server
+npm run lint
+npm run format
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+# Client
+cd ../client
+npm run lint
+npm run format
+```
 
-## 🤝 Contributing
+## Deployment
+
+### Docker
+
+Build and run with Docker:
+
+```bash
+docker-compose up --build
+```
+
+### Manual Deployment
+
+1. Build the client:
+```bash
+cd client
+npm run build
+```
+
+2. Start the server:
+```bash
+cd server
+npm start
+```
+
+## Contributing
 
 1. Fork the repository
 2. Create your feature branch (`git checkout -b feature/amazing-feature`)
@@ -177,6 +178,10 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
-## 📞 Support
+## License
 
-For support, email support@floussly.com or join our Slack channel. 
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Support
+
+For support, email support@floussly.com or open an issue in the GitHub repository. 

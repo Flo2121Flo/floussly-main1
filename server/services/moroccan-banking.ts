@@ -1,5 +1,8 @@
 import axios from 'axios';
+import { config } from '../config';
 import { logError, logInfo } from '../utils/logger';
+import { CircuitBreakerRegistry } from '../utils/circuit-breaker';
+import { ExternalServiceError } from '../utils/enhanced-error';
 
 interface BankAccount {
   accountNumber: string;
@@ -28,22 +31,24 @@ interface BankTransfer {
 
 export class MoroccanBankingService {
   private static instance: MoroccanBankingService;
-  private readonly m2tApiKey: string;
-  private readonly m2tSecretKey: string;
-  private readonly m2tBaseUrl: string;
-  private readonly cmiApiKey: string;
-  private readonly cmiBaseUrl: string;
-  private readonly bankAlMaghribApiKey: string;
-  private readonly bankAlMaghribBaseUrl: string;
+  private m2tBaseUrl: string;
+  private m2tApiKey: string;
+  private m2tSecretKey: string;
+  private cmiBaseUrl: string;
+  private cmiApiKey: string;
+  private bankAlMaghribBaseUrl: string;
+  private bankAlMaghribApiKey: string;
+  private circuitBreakerRegistry: CircuitBreakerRegistry;
 
   private constructor() {
-    this.m2tApiKey = process.env.M2T_API_KEY || '';
-    this.m2tSecretKey = process.env.M2T_SECRET_KEY || '';
-    this.m2tBaseUrl = process.env.M2T_BASE_URL || 'https://api.m2t.ma';
-    this.cmiApiKey = process.env.CMI_API_KEY || '';
-    this.cmiBaseUrl = process.env.CMI_BASE_URL || 'https://api.cmi.ma';
-    this.bankAlMaghribApiKey = process.env.BANK_AL_MAGHRIB_API_KEY || '';
-    this.bankAlMaghribBaseUrl = process.env.BANK_AL_MAGHRIB_BASE_URL || 'https://api.bam.ma';
+    this.m2tBaseUrl = config.moroccanBank.m2t.baseUrl;
+    this.m2tApiKey = config.moroccanBank.m2t.apiKey;
+    this.m2tSecretKey = config.moroccanBank.m2t.secretKey;
+    this.cmiBaseUrl = config.moroccanBank.cmi.baseUrl;
+    this.cmiApiKey = config.moroccanBank.cmi.apiKey;
+    this.bankAlMaghribBaseUrl = config.moroccanBank.bankAlMaghrib.baseUrl;
+    this.bankAlMaghribApiKey = config.moroccanBank.bankAlMaghrib.apiKey;
+    this.circuitBreakerRegistry = CircuitBreakerRegistry.getInstance();
   }
 
   public static getInstance(): MoroccanBankingService {
@@ -55,18 +60,32 @@ export class MoroccanBankingService {
 
   // M2T API Methods
   async getM2TAccountBalance(accountNumber: string): Promise<number> {
-    try {
-      const response = await axios.get(`${this.m2tBaseUrl}/accounts/${accountNumber}/balance`, {
-        headers: {
-          'Authorization': `Bearer ${this.m2tApiKey}`,
-          'X-Secret-Key': this.m2tSecretKey
+    const breaker = this.circuitBreakerRegistry.getBreaker('m2t-balance', {
+      failureThreshold: 3,
+      resetTimeout: 30000,
+    });
+
+    return breaker.execute(
+      async () => {
+        try {
+          const response = await axios.get(`${this.m2tBaseUrl}/accounts/${accountNumber}/balance`, {
+            headers: {
+              'Authorization': `Bearer ${this.m2tApiKey}`,
+              'X-Secret-Key': this.m2tSecretKey
+            },
+            timeout: 5000
+          });
+          return response.data.balance;
+        } catch (error) {
+          logError(new Error('Failed to get M2T account balance'), 'MoroccanBankingService');
+          throw new ExternalServiceError('M2T', 'Failed to get account balance', { accountNumber, error });
         }
-      });
-      return response.data.balance;
-    } catch (error) {
-      logError(new Error('Failed to get M2T account balance'), 'MoroccanBankingService');
-      throw error;
-    }
+      },
+      async () => {
+        // Fallback: Return cached balance or throw error
+        throw new ExternalServiceError('M2T', 'Service unavailable', { accountNumber });
+      }
+    );
   }
 
   async initiateM2TTransfer(transfer: BankTransfer): Promise<string> {
@@ -86,48 +105,90 @@ export class MoroccanBankingService {
 
   // CMI API Methods
   async getCMIAccountDetails(accountNumber: string): Promise<BankAccount> {
-    try {
-      const response = await axios.get(`${this.cmiBaseUrl}/accounts/${accountNumber}`, {
-        headers: {
-          'Authorization': `Bearer ${this.cmiApiKey}`
+    const breaker = this.circuitBreakerRegistry.getBreaker('cmi-account', {
+      failureThreshold: 3,
+      resetTimeout: 30000,
+    });
+
+    return breaker.execute(
+      async () => {
+        try {
+          const response = await axios.get(`${this.cmiBaseUrl}/accounts/${accountNumber}`, {
+            headers: {
+              'Authorization': `Bearer ${this.cmiApiKey}`
+            },
+            timeout: 5000
+          });
+          return response.data;
+        } catch (error) {
+          logError(new Error('Failed to get CMI account details'), 'MoroccanBankingService');
+          throw new ExternalServiceError('CMI', 'Failed to get account details', { accountNumber, error });
         }
-      });
-      return response.data;
-    } catch (error) {
-      logError(new Error('Failed to get CMI account details'), 'MoroccanBankingService');
-      throw error;
-    }
+      },
+      async () => {
+        // Fallback: Return cached account details or throw error
+        throw new ExternalServiceError('CMI', 'Service unavailable', { accountNumber });
+      }
+    );
   }
 
   async getCMITransactions(accountNumber: string, startDate: string, endDate: string): Promise<Transaction[]> {
-    try {
-      const response = await axios.get(`${this.cmiBaseUrl}/accounts/${accountNumber}/transactions`, {
-        params: { startDate, endDate },
-        headers: {
-          'Authorization': `Bearer ${this.cmiApiKey}`
+    const breaker = this.circuitBreakerRegistry.getBreaker('cmi-transactions', {
+      failureThreshold: 3,
+      resetTimeout: 30000,
+    });
+
+    return breaker.execute(
+      async () => {
+        try {
+          const response = await axios.get(`${this.cmiBaseUrl}/accounts/${accountNumber}/transactions`, {
+            params: { startDate, endDate },
+            headers: {
+              'Authorization': `Bearer ${this.cmiApiKey}`
+            },
+            timeout: 5000
+          });
+          return response.data.transactions;
+        } catch (error) {
+          logError(new Error('Failed to get CMI transactions'), 'MoroccanBankingService');
+          throw new ExternalServiceError('CMI', 'Failed to get transactions', { accountNumber, startDate, endDate, error });
         }
-      });
-      return response.data.transactions;
-    } catch (error) {
-      logError(new Error('Failed to get CMI transactions'), 'MoroccanBankingService');
-      throw error;
-    }
+      },
+      async () => {
+        // Fallback: Return cached transactions or throw error
+        throw new ExternalServiceError('CMI', 'Service unavailable', { accountNumber, startDate, endDate });
+      }
+    );
   }
 
   // Bank Al Maghrib API Methods
   async getExchangeRate(fromCurrency: string, toCurrency: string): Promise<number> {
-    try {
-      const response = await axios.get(`${this.bankAlMaghribBaseUrl}/exchange-rates`, {
-        params: { fromCurrency, toCurrency },
-        headers: {
-          'Authorization': `Bearer ${this.bankAlMaghribApiKey}`
+    const breaker = this.circuitBreakerRegistry.getBreaker('bank-al-maghrib-exchange', {
+      failureThreshold: 3,
+      resetTimeout: 30000,
+    });
+
+    return breaker.execute(
+      async () => {
+        try {
+          const response = await axios.get(`${this.bankAlMaghribBaseUrl}/exchange-rates`, {
+            params: { fromCurrency, toCurrency },
+            headers: {
+              'Authorization': `Bearer ${this.bankAlMaghribApiKey}`
+            },
+            timeout: 5000
+          });
+          return response.data.rate;
+        } catch (error) {
+          logError(new Error('Failed to get exchange rate'), 'MoroccanBankingService');
+          throw new ExternalServiceError('Bank Al Maghrib', 'Failed to get exchange rate', { fromCurrency, toCurrency, error });
         }
-      });
-      return response.data.rate;
-    } catch (error) {
-      logError(new Error('Failed to get exchange rate'), 'MoroccanBankingService');
-      throw error;
-    }
+      },
+      async () => {
+        // Fallback: Return cached exchange rate or throw error
+        throw new ExternalServiceError('Bank Al Maghrib', 'Service unavailable', { fromCurrency, toCurrency });
+      }
+    );
   }
 
   async getBankHolidays(year: number): Promise<string[]> {
@@ -146,17 +207,31 @@ export class MoroccanBankingService {
 
   // Generic Bank API Methods
   async getAccountBalance(bankCode: string, accountNumber: string): Promise<number> {
-    try {
-      const response = await axios.get(`${this.bankAlMaghribBaseUrl}/banks/${bankCode}/accounts/${accountNumber}/balance`, {
-        headers: {
-          'Authorization': `Bearer ${this.bankAlMaghribApiKey}`
+    const breaker = this.circuitBreakerRegistry.getBreaker('bank-balance', {
+      failureThreshold: 3,
+      resetTimeout: 30000,
+    });
+
+    return breaker.execute(
+      async () => {
+        try {
+          const response = await axios.get(`${this.bankAlMaghribBaseUrl}/banks/${bankCode}/accounts/${accountNumber}/balance`, {
+            headers: {
+              'Authorization': `Bearer ${this.bankAlMaghribApiKey}`
+            },
+            timeout: 5000
+          });
+          return response.data.balance;
+        } catch (error) {
+          logError(new Error('Failed to get account balance'), 'MoroccanBankingService');
+          throw new ExternalServiceError('Bank Al Maghrib', 'Failed to get account balance', { bankCode, accountNumber, error });
         }
-      });
-      return response.data.balance;
-    } catch (error) {
-      logError(new Error('Failed to get account balance'), 'MoroccanBankingService');
-      throw error;
-    }
+      },
+      async () => {
+        // Fallback: Return cached balance or throw error
+        throw new ExternalServiceError('Bank Al Maghrib', 'Service unavailable', { bankCode, accountNumber });
+      }
+    );
   }
 
   async initiateBankTransfer(bankCode: string, transfer: BankTransfer): Promise<string> {
