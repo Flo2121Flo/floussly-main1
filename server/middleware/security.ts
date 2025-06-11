@@ -15,6 +15,7 @@ import { promisify } from "util";
 import { AWSError } from "aws-sdk";
 import securityService from '../services/security';
 import crypto from 'crypto';
+import config from '../config';
 
 // Install required type definitions
 // npm install --save-dev @types/sanitize-html @types/html-escaper @types/jsonwebtoken
