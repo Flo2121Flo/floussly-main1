@@ -9,131 +9,91 @@ export const errorHandler = (
   res: Response,
   next: NextFunction
 ) => {
-  // Log the error
-  logger.error({
+  // Log error with correlation ID
+  logger.error('Error occurred', {
     error: err.message,
     stack: err.stack,
+    correlationId: req.correlationId,
     path: req.path,
-    method: req.method,
-    ip: req.ip,
-    userId: req.user?.id,
+    method: req.method
   });
+
+  // Handle known errors
+  if (err instanceof AppError) {
+    return res.status(err.statusCode).json({
+      status: 'error',
+      code: err.code,
+      message: err.message,
+      ...(err.metadata && { metadata: err.metadata })
+    });
+  }
 
   // Handle Prisma errors
   if (err instanceof Prisma.PrismaClientKnownRequestError) {
     switch (err.code) {
-      case "P2002":
+      case 'P2002': // Unique constraint violation
         return res.status(409).json({
-          status: "error",
-          message: "A record with this value already exists",
-          field: err.meta?.target?.[0],
+          status: 'error',
+          code: 'UNIQUE_CONSTRAINT_VIOLATION',
+          message: 'A record with this value already exists'
         });
-      case "P2025":
+      case 'P2025': // Record not found
         return res.status(404).json({
-          status: "error",
-          message: "Record not found",
-        });
-      case "P2003":
-        return res.status(400).json({
-          status: "error",
-          message: "Foreign key constraint failed",
+          status: 'error',
+          code: 'RECORD_NOT_FOUND',
+          message: 'The requested record was not found'
         });
       default:
         return res.status(500).json({
-          status: "error",
-          message: "Database error occurred",
+          status: 'error',
+          code: 'DATABASE_ERROR',
+          message: 'A database error occurred'
         });
     }
   }
 
   // Handle validation errors
-  if (err instanceof Prisma.PrismaClientValidationError) {
+  if (err.name === 'ValidationError') {
     return res.status(400).json({
-      status: "error",
-      message: "Validation error",
-      details: err.message,
-    });
-  }
-
-  // Handle custom AppError
-  if (err instanceof AppError) {
-    return res.status(err.statusCode).json({
-      status: "error",
-      message: err.message,
-      code: err.code,
-      ...(err.details && { details: err.details }),
+      status: 'error',
+      code: 'VALIDATION_ERROR',
+      message: err.message
     });
   }
 
   // Handle JWT errors
-  if (err.name === "JsonWebTokenError") {
+  if (err.name === 'JsonWebTokenError') {
     return res.status(401).json({
-      status: "error",
-      message: "Invalid token",
-      code: "INVALID_TOKEN",
+      status: 'error',
+      code: 'INVALID_TOKEN',
+      message: 'Invalid authentication token'
     });
   }
 
-  if (err.name === "TokenExpiredError") {
+  if (err.name === 'TokenExpiredError') {
     return res.status(401).json({
-      status: "error",
-      message: "Token expired",
-      code: "TOKEN_EXPIRED",
+      status: 'error',
+      code: 'TOKEN_EXPIRED',
+      message: 'Authentication token has expired'
     });
   }
 
   // Handle rate limit errors
-  if (err.name === "RateLimitError") {
+  if (err.name === 'RateLimitExceeded') {
     return res.status(429).json({
-      status: "error",
-      message: "Too many requests",
-      code: "RATE_LIMIT_EXCEEDED",
+      status: 'error',
+      code: 'RATE_LIMIT_EXCEEDED',
+      message: 'Too many requests, please try again later'
     });
   }
 
-  // Handle AWS Cognito errors
-  if (err.name === "NotAuthorizedException") {
-    return res.status(401).json({
-      status: "error",
-      message: "Invalid credentials",
-      code: "INVALID_CREDENTIALS",
-    });
-  }
-
-  if (err.name === "UserNotFoundException") {
-    return res.status(404).json({
-      status: "error",
-      message: "User not found",
-      code: "USER_NOT_FOUND",
-    });
-  }
-
-  // Handle network errors
-  if (err.name === "NetworkError") {
-    return res.status(503).json({
-      status: "error",
-      message: "Service temporarily unavailable",
-      code: "SERVICE_UNAVAILABLE",
-    });
-  }
-
-  // Handle timeout errors
-  if (err.name === "TimeoutError") {
-    return res.status(504).json({
-      status: "error",
-      message: "Request timeout",
-      code: "REQUEST_TIMEOUT",
-    });
-  }
-
-  // Default error response
+  // Handle unknown errors
   return res.status(500).json({
-    status: "error",
-    message: "Internal server error",
-    ...(process.env.NODE_ENV === "development" && {
-      stack: err.stack,
-      details: err.message,
-    }),
+    status: 'error',
+    code: 'INTERNAL_SERVER_ERROR',
+    message: process.env.NODE_ENV === 'production' 
+      ? 'An unexpected error occurred'
+      : err.message
   });
 };
 

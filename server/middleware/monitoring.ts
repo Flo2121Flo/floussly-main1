@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { MetricsService } from '../services/metrics-service';
+import { MonitoringService } from '../services/monitoring';
 
 export const monitoringMiddleware = (metricsService: MetricsService) => {
   return (req: Request, res: Response, next: NextFunction) => {
@@ -136,4 +137,52 @@ export const businessMetricsMiddleware = (metricsService: MetricsService) => {
 
     next();
   };
+};
+
+export const requestMonitoring = (req: Request, res: Response, next: NextFunction) => {
+  const startTime = Date.now();
+
+  // Track response
+  res.on('finish', () => {
+    const responseTime = Date.now() - startTime;
+
+    MonitoringService.trackRequest({
+      path: req.path,
+      method: req.method,
+      statusCode: res.statusCode,
+      responseTime,
+      userId: req.user?.id
+    });
+  });
+
+  // Track errors
+  res.on('error', (error) => {
+    MonitoringService.trackError({
+      error,
+      path: req.path,
+      method: req.method,
+      userId: req.user?.id
+    });
+  });
+
+  next();
+};
+
+export const errorMonitoring = (req: Request, res: Response, next: NextFunction) => {
+  const originalSend = res.send;
+
+  res.send = function (body) {
+    if (res.statusCode >= 400) {
+      MonitoringService.trackError({
+        error: new Error(typeof body === 'string' ? body : JSON.stringify(body)),
+        path: req.path,
+        method: req.method,
+        userId: req.user?.id
+      });
+    }
+
+    return originalSend.call(this, body);
+  };
+
+  next();
 }; 

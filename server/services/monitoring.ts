@@ -1,6 +1,11 @@
 import { Redis } from 'ioredis';
 import { z } from 'zod';
 import { logger } from '@/utils/logger';
+import { PrismaClient } from '@prisma/client';
+import { config } from '../config';
+
+const prisma = new PrismaClient();
+const redis = new Redis(config.redis.url);
 
 // Redis keys
 const PERFORMANCE_METRICS_KEY = 'monitoring:performance:metrics';
@@ -49,7 +54,250 @@ const networkReportSchema = z.object({
   }),
 });
 
-class MonitoringService {
+export class MonitoringService {
+  private static readonly METRICS_TTL = 24 * 60 * 60; // 24 hours
+
+  /**
+   * Track API request metrics
+   */
+  static async trackRequest(data: {
+    path: string;
+    method: string;
+    statusCode: number;
+    responseTime: number;
+    userId?: string;
+  }): Promise<void> {
+    const { path, method, statusCode, responseTime, userId } = data;
+    const timestamp = new Date().toISOString();
+
+    try {
+      // Track in Redis for real-time metrics
+      await redis.zadd(
+        'api_requests',
+        Date.now(),
+        JSON.stringify({
+          path,
+          method,
+          statusCode,
+          responseTime,
+          userId,
+          timestamp
+        })
+      );
+
+      // Clean up old metrics
+      await redis.zremrangebyscore(
+        'api_requests',
+        0,
+        Date.now() - this.METRICS_TTL * 1000
+      );
+
+      // Track in database for historical analysis
+      await prisma.metrics.create({
+        data: {
+          type: 'API_REQUEST',
+          path,
+          method,
+          statusCode,
+          responseTime,
+          userId,
+          metadata: {
+            timestamp
+          }
+        }
+      });
+    } catch (error) {
+      logger.error('Failed to track request metrics', {
+        error,
+        data
+      });
+    }
+  }
+
+  /**
+   * Track error metrics
+   */
+  static async trackError(data: {
+    error: Error;
+    path: string;
+    method: string;
+    userId?: string;
+  }): Promise<void> {
+    const { error, path, method, userId } = data;
+    const timestamp = new Date().toISOString();
+
+    try {
+      // Track in Redis for real-time metrics
+      await redis.zadd(
+        'api_errors',
+        Date.now(),
+        JSON.stringify({
+          error: error.message,
+          path,
+          method,
+          userId,
+          timestamp
+        })
+      );
+
+      // Clean up old metrics
+      await redis.zremrangebyscore(
+        'api_errors',
+        0,
+        Date.now() - this.METRICS_TTL * 1000
+      );
+
+      // Track in database for historical analysis
+      await prisma.metrics.create({
+        data: {
+          type: 'API_ERROR',
+          path,
+          method,
+          statusCode: 500,
+          userId,
+          metadata: {
+            error: error.message,
+            stack: error.stack,
+            timestamp
+          }
+        }
+      });
+    } catch (error) {
+      logger.error('Failed to track error metrics', {
+        error,
+        data
+      });
+    }
+  }
+
+  /**
+   * Get real-time metrics
+   */
+  static async getRealTimeMetrics(): Promise<any> {
+    try {
+      const [requests, errors] = await Promise.all([
+        redis.zrange('api_requests', -100, -1),
+        redis.zrange('api_errors', -100, -1)
+      ]);
+
+      return {
+        requests: requests.map(req => JSON.parse(req)),
+        errors: errors.map(err => JSON.parse(err))
+      };
+    } catch (error) {
+      logger.error('Failed to get real-time metrics', { error });
+      throw error;
+    }
+  }
+
+  /**
+   * Get historical metrics
+   */
+  static async getHistoricalMetrics(options: {
+    startDate: Date;
+    endDate: Date;
+    type?: string;
+  }): Promise<any> {
+    try {
+      const { startDate, endDate, type } = options;
+
+      const metrics = await prisma.metrics.findMany({
+        where: {
+          createdAt: {
+            gte: startDate,
+            lte: endDate
+          },
+          ...(type && { type })
+        },
+        orderBy: {
+          createdAt: 'desc'
+        }
+      });
+
+      return metrics;
+    } catch (error) {
+      logger.error('Failed to get historical metrics', { error });
+      throw error;
+    }
+  }
+
+  /**
+   * Get system health metrics
+   */
+  static async getSystemHealth(): Promise<any> {
+    try {
+      const [
+        dbStatus,
+        redisStatus,
+        activeUsers,
+        errorRate
+      ] = await Promise.all([
+        this.checkDatabaseHealth(),
+        this.checkRedisHealth(),
+        this.getActiveUsersCount(),
+        this.getErrorRate()
+      ]);
+
+      return {
+        status: dbStatus && redisStatus ? 'healthy' : 'unhealthy',
+        database: {
+          status: dbStatus ? 'connected' : 'disconnected'
+        },
+        redis: {
+          status: redisStatus ? 'connected' : 'disconnected'
+        },
+        metrics: {
+          activeUsers,
+          errorRate
+        },
+        timestamp: new Date().toISOString()
+      };
+    } catch (error) {
+      logger.error('Failed to get system health', { error });
+      throw error;
+    }
+  }
+
+  private static async checkDatabaseHealth(): Promise<boolean> {
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private static async checkRedisHealth(): Promise<boolean> {
+    try {
+      await redis.ping();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private static async getActiveUsersCount(): Promise<number> {
+    try {
+      const activeUsers = await redis.zcard('active_users');
+      return activeUsers;
+    } catch {
+      return 0;
+    }
+  }
+
+  private static async getErrorRate(): Promise<number> {
+    try {
+      const [totalRequests, totalErrors] = await Promise.all([
+        redis.zcard('api_requests'),
+        redis.zcard('api_errors')
+      ]);
+
+      return totalRequests > 0 ? (totalErrors / totalRequests) * 100 : 0;
+    } catch {
+      return 0;
+    }
+  }
+
   private redis: Redis;
   private readonly maxMetrics = 1000;
   private readonly maxReports = 1000;
