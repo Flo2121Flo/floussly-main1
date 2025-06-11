@@ -67,4 +67,49 @@ process.on('SIGINT', async () => {
 process.on('SIGTERM', async () => {
   await prisma.$disconnect();
   process.exit(0);
+});
+
+// Performance monitoring middleware
+prisma.$use(async (params, next) => {
+  const start = Date.now();
+  const result = await next(params);
+  const duration = Date.now() - start;
+
+  // Log slow queries
+  if (duration > 100) { // 100ms threshold
+    logger.warn('Slow query detected', {
+      model: params.model,
+      action: params.action,
+      duration,
+      query: params.args,
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  // Log all queries in development
+  if (process.env.NODE_ENV === 'development') {
+    logger.debug('Database query', {
+      model: params.model,
+      action: params.action,
+      duration,
+      query: params.args
+    });
+  }
+
+  return result;
+});
+
+// Error handling middleware
+prisma.$use(async (params, next) => {
+  try {
+    return await next(params);
+  } catch (error) {
+    logger.error('Database error', {
+      model: params.model,
+      action: params.action,
+      error: error.message,
+      query: params.args
+    });
+    throw error;
+  }
 }); 

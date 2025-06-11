@@ -30,6 +30,10 @@ import { createClient } from 'redis';
 import { MonitoringService } from '@/services/monitoring';
 import requestMonitoring from '@/middleware/monitoring';
 import monitoringRoutes from '@/routes/monitoring';
+import { sessionMiddleware } from './middleware/session';
+import { correlationMiddleware, correlationLogger } from './middleware/correlation';
+import { defaultLimiter, authLimiter, transactionLimiter } from './middleware/rate-limit';
+import { errorHandler } from './middleware/error';
 
 // Import routes
 import authRoutes from './routes/auth';
@@ -89,6 +93,18 @@ app.use(requestLogger);
 // Apply monitoring middleware
 app.use(requestMonitoring(monitoringService));
 
+// Correlation ID and logging
+app.use(correlationMiddleware);
+app.use(correlationLogger);
+
+// Session management
+app.use(sessionMiddleware);
+
+// Rate limiting
+app.use(defaultLimiter); // Apply to all routes
+app.use('/auth', authLimiter); // Stricter limits for auth routes
+app.use('/transactions', transactionLimiter); // Stricter limits for transaction routes
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({
@@ -132,6 +148,7 @@ app.use('/api/notifications', notificationRoutes);
 app.use(errorLogger);
 app.use(errorMonitoringMiddleware(metricsService));
 app.use(enhancedErrorHandler);
+app.use(errorHandler);
 
 // Start server
 const PORT = config.port || 3000;

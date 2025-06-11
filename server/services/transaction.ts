@@ -16,11 +16,13 @@ const openai = new OpenAI({ apiKey: config.openai.apiKey });
 export class TransactionService {
   private static readonly CATEGORY_CACHE_TTL = 24 * 60 * 60; // 24 hours
   private static readonly PATTERN_CACHE_TTL = 7 * 24 * 60 * 60; // 7 days
+  private static readonly IDEMPOTENCY_TTL = 24 * 60 * 60; // 24 hours
 
   /**
    * Create a new transaction with enhanced fraud detection and AI categorization
    */
   static async createTransaction(data: {
+    idempotencyKey: string;
     senderId: string;
     receiverId: string;
     amount: number;
@@ -31,9 +33,16 @@ export class TransactionService {
     description?: string;
     metadata?: Record<string, any>;
   }): Promise<any> {
-    const { senderId, receiverId, amount, type, ip, deviceFingerprint, location, description, metadata } = data;
+    const { idempotencyKey, senderId, receiverId, amount, type, ip, deviceFingerprint, location, description, metadata } = data;
 
     try {
+      // Check idempotency
+      const existingTransaction = await this.checkIdempotency(idempotencyKey);
+      if (existingTransaction) {
+        logger.info("Idempotent transaction found", { idempotencyKey, transactionId: existingTransaction.id });
+        return existingTransaction;
+      }
+
       // Enhanced fraud detection
       const fraudCheck = await FraudDetectionService.checkTransactionPatterns({
         userId: senderId,
@@ -66,29 +75,31 @@ export class TransactionService {
         throw new AppError("Invalid transaction amount", 400, "INVALID_AMOUNT");
       }
 
-      // Check sender's wallet balance
-      const sender = await prisma.user.findUnique({
-        where: { id: senderId },
-        select: { wallet: true },
-      });
-
-      if (!sender || sender.wallet.balance < amount) {
-        throw new AppError("Insufficient funds", 400, "INSUFFICIENT_FUNDS");
-      }
-
-      // AI-powered transaction categorization
-      const category = await this.categorizeTransaction({
-        amount,
-        type,
-        description,
-        metadata,
-      });
-
       // Create transaction with atomic operation
-      const transaction = await prisma.$transaction(async (prisma) => {
+      const transaction = await prisma.$transaction(async (tx) => {
+        // Check sender's wallet balance with lock
+        const sender = await tx.user.findUnique({
+          where: { id: senderId },
+          select: { wallet: true },
+          lock: true
+        });
+
+        if (!sender || sender.wallet.balance < amount) {
+          throw new AppError("Insufficient funds", 400, "INSUFFICIENT_FUNDS");
+        }
+
+        // AI-powered transaction categorization
+        const category = await this.categorizeTransaction({
+          amount,
+          type,
+          description,
+          metadata,
+        });
+
         // Create transaction record
-        const newTransaction = await prisma.transaction.create({
+        const newTransaction = await tx.transaction.create({
           data: {
+            idempotencyKey,
             senderId,
             receiverId,
             amount,
@@ -105,7 +116,7 @@ export class TransactionService {
         });
 
         // Update sender's wallet
-        await prisma.user.update({
+        await tx.user.update({
           where: { id: senderId },
           data: {
             wallet: {
@@ -119,7 +130,7 @@ export class TransactionService {
         });
 
         // Update receiver's wallet
-        await prisma.user.update({
+        await tx.user.update({
           where: { id: receiverId },
           data: {
             wallet: {
@@ -133,7 +144,7 @@ export class TransactionService {
         });
 
         // Create audit log
-        await prisma.auditLog.create({
+        await tx.auditLog.create({
           data: {
             userId: senderId,
             action: "TRANSACTION_CREATED",
@@ -167,6 +178,37 @@ export class TransactionService {
       });
       throw error;
     }
+  }
+
+  /**
+   * Check for existing transaction with idempotency key
+   */
+  private static async checkIdempotency(idempotencyKey: string): Promise<Transaction | null> {
+    // Check Redis cache first
+    const cachedTransactionId = await redis.get(`idempotency:${idempotencyKey}`);
+    if (cachedTransactionId) {
+      const transaction = await prisma.transaction.findUnique({
+        where: { id: cachedTransactionId }
+      });
+      if (transaction) return transaction;
+    }
+
+    // Check database
+    const transaction = await prisma.transaction.findFirst({
+      where: { idempotencyKey }
+    });
+
+    if (transaction) {
+      // Cache the result
+      await redis.set(
+        `idempotency:${idempotencyKey}`,
+        transaction.id,
+        'EX',
+        this.IDEMPOTENCY_TTL
+      );
+    }
+
+    return transaction;
   }
 
   /**

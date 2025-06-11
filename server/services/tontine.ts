@@ -2,6 +2,7 @@ import { PrismaClient, Tontine, TontineMember, TontinePayout, TontineStatus, Use
 import { config } from '../config';
 import { AppError } from '../utils/error';
 import { logger } from '../utils/logger';
+import { NotificationService } from './notifications';
 
 const prisma = new PrismaClient();
 
@@ -288,5 +289,230 @@ export class TontineService {
       completionPercentage:
         (tontine.members.length / tontine.maxMembers) * 100,
     };
+  }
+
+  /**
+   * Handle missed payment for a tontine member
+   */
+  static async handleMissedPayment(tontineId: string, userId: string): Promise<void> {
+    return await prisma.$transaction(async (tx) => {
+      const member = await tx.tontineMember.findUnique({
+        where: { tontineId_userId: { tontineId, userId } },
+        include: { tontine: true }
+      });
+      
+      if (!member) {
+        throw new AppError("Member not found", 404);
+      }
+
+      if (member.status === 'SUSPENDED') {
+        throw new AppError("Member is already suspended", 400);
+      }
+
+      // Update member status and missed payments count
+      const updatedMember = await tx.tontineMember.update({
+        where: { id: member.id },
+        data: {
+          missedPayments: { increment: 1 },
+          status: member.missedPayments >= 2 ? 'SUSPENDED' : 'ACTIVE',
+          lastMissedPayment: new Date()
+        }
+      });
+
+      // Notify other members
+      const otherMembers = await tx.tontineMember.findMany({
+        where: {
+          tontineId,
+          userId: { not: userId }
+        },
+        include: { user: true }
+      });
+
+      await Promise.all(otherMembers.map(member => 
+        NotificationService.sendTontineAlert({
+          userId: member.userId,
+          tontineId,
+          type: 'MISSED_PAYMENT',
+          data: {
+            memberName: member.user.name,
+            missedPayments: updatedMember.missedPayments
+          }
+        })
+      ));
+
+      // If member is suspended, notify them
+      if (updatedMember.status === 'SUSPENDED') {
+        await NotificationService.sendTontineAlert({
+          userId,
+          tontineId,
+          type: 'MEMBER_SUSPENDED',
+          data: {
+            tontineName: member.tontine.name,
+            reason: 'Multiple missed payments'
+          }
+        });
+      }
+    });
+  }
+
+  /**
+   * Handle member exit from tontine
+   */
+  static async handleMemberExit(tontineId: string, userId: string): Promise<void> {
+    return await prisma.$transaction(async (tx) => {
+      const tontine = await tx.tontine.findUnique({
+        where: { id: tontineId },
+        include: { 
+          members: {
+            include: { user: true }
+          }
+        }
+      });
+      
+      if (!tontine) {
+        throw new AppError("Tontine not found", 404);
+      }
+
+      const member = tontine.members.find(m => m.userId === userId);
+      if (!member) {
+        throw new AppError("Member not found in tontine", 404);
+      }
+
+      // Calculate refund amount
+      const payouts = await tx.tontinePayout.findMany({
+        where: {
+          tontineId,
+          userId
+        }
+      });
+
+      const totalContributions = payouts.reduce((sum, payout) => sum + payout.amount, 0);
+      const refundAmount = totalContributions;
+
+      // Process refund if there are contributions to refund
+      if (refundAmount > 0) {
+        await tx.transaction.create({
+          data: {
+            type: 'TONTINE_REFUND',
+            amount: refundAmount,
+            senderId: tontine.id,
+            receiverId: userId,
+            status: 'COMPLETED',
+            metadata: {
+              tontineId,
+              tontineName: tontine.name,
+              reason: 'Member exit'
+            }
+          }
+        });
+
+        // Update user's wallet
+        await tx.user.update({
+          where: { id: userId },
+          data: {
+            wallet: {
+              update: {
+                balance: {
+                  increment: refundAmount
+                }
+              }
+            }
+          }
+        });
+      }
+
+      // Update member status
+      await tx.tontineMember.update({
+        where: { id: member.id },
+        data: { 
+          status: 'INACTIVE',
+          exitDate: new Date()
+        }
+      });
+
+      // Notify other members
+      const otherMembers = tontine.members.filter(m => m.userId !== userId);
+      await Promise.all(otherMembers.map(member => 
+        NotificationService.sendTontineAlert({
+          userId: member.userId,
+          tontineId,
+          type: 'MEMBER_EXIT',
+          data: {
+            memberName: member.user.name,
+            tontineName: tontine.name
+          }
+        })
+      ));
+
+      // If this was the last active member, close the tontine
+      const activeMembers = await tx.tontineMember.count({
+        where: {
+          tontineId,
+          status: 'ACTIVE'
+        }
+      });
+
+      if (activeMembers === 0) {
+        await tx.tontine.update({
+          where: { id: tontineId },
+          data: { status: TontineStatus.CLOSED }
+        });
+      }
+    });
+  }
+
+  /**
+   * Get upcoming payment schedule for a tontine
+   */
+  static async getUpcomingPayments(tontineId: string): Promise<any[]> {
+    const tontine = await prisma.tontine.findUnique({
+      where: { id: tontineId },
+      include: {
+        members: {
+          where: { status: 'ACTIVE' },
+          include: { user: true }
+        }
+      }
+    });
+
+    if (!tontine) {
+      throw new AppError("Tontine not found", 404);
+    }
+
+    const now = new Date();
+    const payments = [];
+
+    // Calculate next payment dates for each member
+    for (const member of tontine.members) {
+      const lastPayment = await prisma.tontinePayout.findFirst({
+        where: {
+          tontineId,
+          userId: member.userId
+        },
+        orderBy: { createdAt: 'desc' }
+      });
+
+      let nextPaymentDate = lastPayment 
+        ? new Date(lastPayment.createdAt)
+        : new Date(tontine.createdAt);
+
+      // Add interval based on frequency
+      if (tontine.frequency === 'WEEKLY') {
+        nextPaymentDate.setDate(nextPaymentDate.getDate() + 7);
+      } else {
+        nextPaymentDate.setMonth(nextPaymentDate.getMonth() + 1);
+      }
+
+      if (nextPaymentDate > now) {
+        payments.push({
+          memberId: member.userId,
+          memberName: member.user.name,
+          nextPaymentDate,
+          amount: tontine.contribution
+        });
+      }
+    }
+
+    return payments.sort((a, b) => a.nextPaymentDate.getTime() - b.nextPaymentDate.getTime());
   }
 } 
